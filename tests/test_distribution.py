@@ -3,6 +3,9 @@ import json
 import tempfile
 import unittest
 from unittest import mock
+import os
+import subprocess
+import sys
 
 from ai_agent_fabric import distribution
 from ai_agent_fabric.distribution import (
@@ -22,6 +25,24 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DistributionLifecycleTest(unittest.TestCase):
+    def test_windows_cp1252_python_launcher_emits_russian_json_as_utf8(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "fabric-home"
+            project = root / "project"
+            project.mkdir()
+            install_release(SOURCE_ROOT, home, "test-utf8")
+            bind_project(project, "test-utf8", "codex", home)
+            environment = os.environ.copy()
+            environment["PYTHONIOENCODING"] = "cp1252"
+            environment["AI_AGENT_FABRIC_HOME"] = str(home)
+            result = subprocess.run(
+                [sys.executable, str(home / "bin/ai-agent-fabric.py"), "start", str(project), "--title", "Проверить и упорядочить каталог компонентов", "--type", "small-bug", "--apply", "--json"],
+                capture_output=True, env=environment, check=True,
+            )
+            payload = json.loads(result.stdout.decode("utf-8"))
+            self.assertEqual(payload["task_id"], "review-and-organize-component-catalog")
+            self.assertEqual(payload["created"]["task_id"], "review-and-organize-component-catalog")
     def test_windows_elevation_requires_acknowledged_notice_before_writing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

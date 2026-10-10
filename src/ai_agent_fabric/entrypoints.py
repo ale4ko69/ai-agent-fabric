@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 from .harness import flush_guard_traces, resume_snapshot
 from .memory import activate_task_lifecycle, database_path, initialize, record, require_current_schema
-from .task_specs import create_task, package_path, slugify, task_root, workflow_steps
+from .identifiers import require_task_id, slugify
+from .task_specs import create_task, package_path, task_root, workflow_steps
 
 
 def work_router(project_root: Path, selector: str | None = None) -> dict[str, Any]:
@@ -31,7 +33,7 @@ def work_router(project_root: Path, selector: str | None = None) -> dict[str, An
 
 def start_preview(project_root: Path, title: str, work_class: str, task_id: str | None = None) -> dict[str, str]:
     """Return the exact package that an explicit start operation would create."""
-    stable_id = slugify(task_id or title)
+    stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
     package = package_path(project_root, stable_id)
     if package.exists():
         raise FileExistsError(f"Task package already exists: {package}")
@@ -47,20 +49,55 @@ def start_task(project_root: Path, title: str, work_class: str, task_id: str | N
     """Create a task package and activate its project-local Socrates session."""
     start_preview(project_root, title, work_class, task_id)
     root = project_root.resolve()
-    stable_id = slugify(task_id or title)
+    stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
     _ensure_memory(root)
     package = create_task(root, title, work_class, stable_id)
-    lifecycle = activate_task_lifecycle(root, stable_id, title, str(package.relative_to(root)).replace("\\", "/"), workflow_steps(work_class), "start")
-    record(
-        root,
-        stable_id,
-        "task-started",
-        "orchestrator",
-        "task-lifecycle-started",
-        {"task_package": str(package.relative_to(root)).replace("\\", "/")},
-    )
+    try:
+        lifecycle = activate_task_lifecycle(
+            root, stable_id, title, str(package.relative_to(root)).replace("\\", "/"), workflow_steps(work_class), "start",
+            {"task_package": str(package.relative_to(root)).replace("\\", "/")},
+        )
+    except BaseException:
+        # Package publication is compensated on lifecycle failure; never strand a new orphan.
+        shutil.rmtree(package, ignore_errors=True)
+        raise
     flush_guard_traces(root)
     return {"package": str(package), "task_id": stable_id, "socrates": {"lifecycle": "started", **lifecycle}}
+
+
+def recover_unicode_package(project_root: Path, source_name: str, task_id: str | None = None, *, apply: bool = False) -> dict[str, str]:
+    """Preview or migrate one legacy Unicode active package without direct SQLite edits."""
+    root = project_root.resolve()
+    source = task_root(root) / "active" / source_name
+    if not source.is_dir() or source.name != source_name:
+        raise ValueError("recovery source must name one existing active package directory")
+    metadata_path = source / "task.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("title"), str) or not isinstance(metadata.get("work_class"), str):
+        raise ValueError("legacy package task.json is invalid")
+    stable_id = require_task_id(task_id) if task_id is not None else slugify(metadata["title"])
+    destination = package_path(root, stable_id)
+    if destination.exists() and destination != source:
+        raise FileExistsError(f"Task package already exists: {destination}")
+    result = {"source": str(source), "task_id": stable_id, "package": str(destination), "action": "rename-package-update-task-json-and-start-socrates"}
+    if not apply:
+        return result
+    if database_path(root).is_file():
+        require_current_schema(root)
+    else:
+        initialize(root)
+    metadata["id"] = stable_id
+    temporary = metadata_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(metadata_path)
+    source.replace(destination)
+    try:
+        activate_task_lifecycle(root, stable_id, metadata["title"], str(destination.relative_to(root)).replace("\\", "/"), workflow_steps(metadata["work_class"]), "start")
+        record(root, stable_id, "task-recovered", "orchestrator", "unicode-package-recovered", {"task_package": str(destination.relative_to(root)).replace("\\", "/")})
+    except BaseException:
+        destination.replace(source)
+        raise
+    return result
 
 
 def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:

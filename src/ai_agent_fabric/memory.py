@@ -5,6 +5,7 @@ import re
 import sqlite3
 from pathlib import Path
 from typing import Any
+from .identifiers import is_safe_identifier
 
 from .project_state import state_path
 
@@ -245,17 +246,22 @@ def activate_task_lifecycle(
     task_package: str,
     step_ids: list[str],
     mode: str,
+    start_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create or resume the durable task-local Socrates execution context."""
     if mode not in {"start", "restore"} or not _safe_identifier(session_id) or not _safe_path_reference(task_package):
         raise ValueError("task lifecycle requires a safe session and task package")
     if not step_ids or len(step_ids) != len(set(step_ids)) or not all(_safe_identifier(step) for step in step_ids):
         raise ValueError("task lifecycle requires unique safe workflow steps")
-    start_session(project_root, session_id, title)
     connection = connect(project_root, create=False)
     try:
         _require_current_schema_connection(connection)
         with connection:
+            connection.execute(
+                "INSERT INTO sessions(id, title) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET title=excluded.title, status='active', updated_at=CURRENT_TIMESTAMP",
+                (session_id, title),
+            )
             lifecycle = connection.execute("SELECT task_package FROM task_lifecycles WHERE session_id=?", (session_id,)).fetchone()
             if lifecycle is None:
                 connection.execute(
@@ -275,6 +281,11 @@ def activate_task_lifecycle(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (active["next_action"], active["status"], session_id),
             )
+            if start_record is not None:
+                connection.execute(
+                    "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, ?, 'orchestrator', ?, ?)",
+                    (session_id, "task-started", "task-lifecycle-started", json.dumps(start_record, ensure_ascii=False, sort_keys=True)),
+                )
         return active
     finally:
         connection.close()
@@ -721,7 +732,7 @@ def _valid_index_item(item: Any) -> bool:
 
 
 def _safe_identifier(value: Any) -> bool:
-    return isinstance(value, str) and bool(SAFE_IDENTIFIER.fullmatch(value)) and not any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
+    return is_safe_identifier(value) and not any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
 
 
 def _safe_path_reference(value: Any) -> bool:

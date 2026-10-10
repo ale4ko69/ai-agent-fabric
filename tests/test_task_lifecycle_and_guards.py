@@ -7,10 +7,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
-from ai_agent_fabric.entrypoints import restore_picker, restore_task, start_task
+from ai_agent_fabric.entrypoints import recover_unicode_package, restore_picker, restore_task, start_task
 from ai_agent_fabric.harness import record_checkpoint
 from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, transition_step
 
@@ -43,6 +44,41 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             [record["kind"] for record in restored["memory"]["records"]],
             ["task-started", "task-restored"],
         )
+
+    def test_russian_start_has_one_ascii_package_session_and_lifecycle(self) -> None:
+        result = start_task(self.project, "Проверить и упорядочить каталог компонентов", "small-bug")
+        task_id = "review-and-organize-component-catalog"
+        self.assertEqual(result["task_id"], task_id)
+        restored = restore_task(self.project, task_id)
+        self.assertEqual(restored["memory"]["session"]["id"], task_id)
+        self.assertEqual(len(restored["memory"]["steps"]), 6)
+
+    def test_unicode_orphan_package_has_preview_and_safe_recovery(self) -> None:
+        source = self.project / "docs/specs/active/Проверить-компоненты"
+        source.mkdir(parents=True)
+        (source / "evidence").mkdir()
+        (source / "evidence/README.md").write_text("# Evidence\n", encoding="utf-8")
+        (source / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
+        (source / "task.json").write_text(json.dumps({"schema_version": 1, "id": "Проверить-компоненты", "title": "Проверить и упорядочить каталог компонентов", "work_class": "small-bug", "status": "active", "tracker": {"provider": "none", "reference": None, "url": None}, "workflow": {"schema_version": 1, "spec_revision": 1, "plan_revision": 1}}), encoding="utf-8")
+        preview = recover_unicode_package(self.project, source.name)
+        self.assertTrue(source.exists())
+        self.assertEqual(preview["task_id"], "review-and-organize-component-catalog")
+        result = recover_unicode_package(self.project, source.name, apply=True)
+        self.assertFalse(source.exists())
+        self.assertTrue(Path(result["package"]).is_dir())
+        self.assertEqual(restore_task(self.project, result["task_id"])["memory"]["session"]["id"], result["task_id"])
+
+    def test_failed_start_leaves_no_published_package_or_task_memory(self) -> None:
+        with mock.patch("ai_agent_fabric.entrypoints.activate_task_lifecycle", side_effect=RuntimeError("lifecycle failed")):
+            with self.assertRaisesRegex(RuntimeError, "lifecycle failed"):
+                start_task(self.project, "Will fail", "small-bug")
+        self.assertFalse((self.project / "docs/specs/active/will-fail").exists())
+        import sqlite3
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            self.assertEqual(connection.execute("SELECT count(*) FROM sessions").fetchone()[0], 0)
+        finally:
+            connection.close()
 
     def test_restore_picker_lists_tasks_and_resolves_number_title_or_id(self) -> None:
         start_task(self.project, "First task", "small-bug", "first-task")

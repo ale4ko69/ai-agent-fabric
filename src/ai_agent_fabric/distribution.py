@@ -578,7 +578,14 @@ def project_update_preview(project_root: Path, release: str, fabric_home: Path |
     home = (fabric_home or default_fabric_home()).expanduser().resolve()
     if _pending_project_update_path(project).is_file():
         raise ValueError("Project has an interrupted Fabric update; run `distribution repair-project-update` first")
-    require_bound_project(project, home)
+    try:
+        require_bound_project(project, home)
+    except ValueError as error:
+        # A damaged *current* immutable release must not trap a project on it.
+        # The update still validates the binding and the selected target release,
+        # then journals/backups the binding through the normal update path.
+        if project_status(project, home).get("error") != "Fabric release file set does not match its manifest":
+            raise
     binding_path = state_path(project, PROJECT_BINDING_FILE)
     binding = _load_project_binding(binding_path)
     target_manifest = _validate_bindable_release(home, release)
@@ -1624,7 +1631,7 @@ def _write_release_adapters(release: Path) -> None:
         adapter_dir = release / "adapters" / client
         adapter_dir.mkdir(parents=True, exist_ok=True)
         _write_json(adapter_dir / "adapter-manifest.json", adapter_manifest(client))
-        (adapter_dir / "bootstrap.md").write_text(
+        bootstrap = (
             "# AI Agent Fabric global bootstrap\n\n"
             "This managed user-level instruction provides the shared Fabric only. "
             "It never supplies project commands, tracker settings, secrets, task content, or memory.\n\n"
@@ -1643,15 +1650,16 @@ def _write_release_adapters(release: Path) -> None:
             "for work routing, task start/restore, and Harness review. When the user asks for one "
             "of those workflows, use the matching Agent Fabric skill. The bound release supplies "
             "only shared contracts and project rules.\n\n"
-            f"The canonical global Fabric launcher is `{launcher}`. Use it for every Fabric command; "
+            + ("For Codex: if `start` or `restore` fails, Root must stop project work. It may only report the failure and use the explicit Fabric recovery path to restore Socrates; it must not perform the task itself.\n\n" if client == "codex" else "")
+            + f"The canonical global Fabric launcher is `{launcher}`. Use it for every Fabric command; "
             "it selects the active installed release. A project path only selects that project's local "
             "context and never supplies a project-local executable.\n\n"
             "When the user corrects agent behaviour in a bound project, record only a minimal "
             "project-local Harness signal with the launcher. Never copy the conversation, commands, "
             "or secrets into that signal. Do not claim automatic capture unless this adapter manifest "
-            "declares an installed hook implementation.\n",
-            encoding="utf-8",
+            "declares an installed hook implementation.\n"
         )
+        (adapter_dir / "bootstrap.md").write_text(bootstrap, encoding="utf-8")
 
 
 def _write_release_core(release: Path) -> None:
@@ -1731,6 +1739,9 @@ def _write_global_launcher(fabric_home: Path) -> None:
         "from pathlib import Path\n"
         "import sys\n\n"
         "sys.dont_write_bytecode = True\n"
+        "for stream in (sys.stdout, sys.stderr):\n"
+        "    if hasattr(stream, 'reconfigure'):\n"
+        "        stream.reconfigure(encoding='utf-8', errors='strict')\n"
         "home = Path(__file__).resolve().parent.parent\n"
         "with (home / 'installation.json').open(encoding='utf-8') as file:\n"
         "    release = json.load(file)['current_release']\n"
@@ -1950,6 +1961,8 @@ def _migrate_project_memory(project: Path, fabric_home: Path, release: str) -> N
         raise ValueError("Project memory is older than the selected release's supported migration floor")
     if current_version > target_version:
         raise ValueError("Project memory is newer than the selected release and cannot be downgraded")
+    if current_version == target_version:
+        return
     launcher = release_path(fabric_home, release) / "bin" / "ai-agent-fabric"
     if not launcher.is_file():
         raise ValueError(f"Selected release has no launcher: {launcher}")

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import hashlib
-import re
 import shutil
-import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 
 from .project_state import state_path
+from .identifiers import require_task_id, slugify
 
 
 WORK_CLASSES = {"small-bug", "planned"}
@@ -49,21 +48,13 @@ def task_root(project_root: Path) -> Path:
     return resolved
 
 
-def slugify(title: str) -> str:
-    normalized = unicodedata.normalize("NFKC", title).strip().lower()
-    slug = re.sub(r"[^\w]+", "-", normalized, flags=re.UNICODE).strip("-_")
-    if not slug:
-        raise ValueError("title must contain letters or numbers")
-    return slug
-
-
 def package_path(project_root: Path, task_id: str) -> Path:
-    safe_id = slugify(task_id)
+    safe_id = require_task_id(task_id)
     return _contained_package_path(task_root(project_root), "active", safe_id)
 
 
 def archived_package_path(project_root: Path, task_id: str) -> Path:
-    return _contained_package_path(task_root(project_root), "archived", slugify(task_id))
+    return _contained_package_path(task_root(project_root), "archived", require_task_id(task_id))
 
 
 def _contained_package_path(root: Path, state: str, task_id: str) -> Path:
@@ -124,7 +115,7 @@ def create_task(project_root: Path, title: str, work_class: str, task_id: str | 
         raise ValueError(f"Target repository does not exist: {root}")
     if work_class not in WORK_CLASSES:
         raise ValueError(f"Unsupported work class: {work_class}")
-    stable_id = slugify(task_id or title)
+    stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
     package = package_path(root, stable_id)
     if package.exists():
         raise FileExistsError(f"Task package already exists: {package}")
@@ -225,8 +216,12 @@ def validate_task(project_root: Path, task_id: str) -> list[str]:
         return ["task.json must be a JSON object"]
     if set(metadata) != TASK_METADATA_FIELDS:
         return ["task.json must use the declared metadata shape"]
-    if type(metadata.get("schema_version")) is not int or metadata["schema_version"] != 1 or not isinstance(metadata.get("id"), str) or not metadata["id"].strip() or not isinstance(metadata.get("title"), str) or not metadata["title"].strip():
+    if type(metadata.get("schema_version")) is not int or metadata["schema_version"] != 1 or not isinstance(metadata.get("id"), str) or not isinstance(metadata.get("title"), str) or not metadata["title"].strip():
         return ["task.json must declare schema_version 1 plus non-empty id and title"]
+    try:
+        require_task_id(metadata["id"])
+    except ValueError:
+        return ["task.json.id must be lowercase ASCII kebab-case"]
     if metadata.get("status") not in {"active", "archived"}:
         return ["task.json has an unsupported status"]
     tracker = metadata.get("tracker")
@@ -266,7 +261,7 @@ def implementation_readiness(project_root: Path, task_id: str) -> dict[str, obje
     package = package_path(project_root, task_id)
     errors = validate_task(project_root, task_id)
     if errors:
-        return {"task_id": slugify(task_id), "ready": False, "reasons": errors}
+        return {"task_id": require_task_id(task_id), "ready": False, "reasons": errors}
     metadata = _load_json_object(_package_file(package, "task.json"), "task metadata")
     work_class = metadata["work_class"]
     if work_class == "small-bug":

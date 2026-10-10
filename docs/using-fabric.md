@@ -4,6 +4,10 @@ This is the operator guide for a person using a bound project through Codex, Cop
 or Claude. It describes what the task commands do, who decides after a failure, and
 when Fabric behaviour is actually live.
 
+If `start` or `restore` fails in Codex, Root stops project work. It may only report
+the failure or run the explicit Fabric recovery path; it must not execute the task in
+place of the task-local Socrates lifecycle.
+
 ## The three states that must not be confused
 
 ```mermaid

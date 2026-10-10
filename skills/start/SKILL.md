@@ -23,6 +23,9 @@ the user explicitly confirms that preview:
 session**. It does not start a global/root orchestrator. Socrates now owns the task's
 delegation, durable memory, Guard failures, Harness signals, and next safe action.
 
+If `start` fails, stop project work. Report the failure and use only the explicit
+Fabric recovery path when applicable; Root must not implement the requested task.
+
 Choose `planned` for a feature, an understood bug requiring investigation, or a
 feature rework. It creates the spec, research, plan, Kepler verdict, and human
 approval artifacts. Choose `small-bug` only for a bounded known correction; it uses

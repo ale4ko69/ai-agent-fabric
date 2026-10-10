@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 import re
 from typing import Any
+from .identifiers import is_safe_identifier
 from datetime import datetime, timezone
 
 from .gates import load_gates, validate_checkpoint
@@ -240,7 +241,7 @@ def _validate_trace_event(event: dict[str, Any]) -> None:
 
 
 def _is_safe_identifier(value: str) -> bool:
-    return bool(TRACE_IDENTIFIER.fullmatch(value)) and not any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
+    return is_safe_identifier(value) and not any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
 
 
 def _is_safe_trace_value(field: str, value: str) -> bool:

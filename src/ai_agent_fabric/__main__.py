@@ -14,12 +14,17 @@ from .environment import detect_environment
 from .memory import acknowledge_result, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
 from .task_specs import approve_planned_task, approval_preview, archive_task, create_task, implementation_readiness, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
-from .entrypoints import restore_picker, restore_task, start_preview, start_task, work_router
+from .entrypoints import recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
 from .socrates import record_guard_failure, record_harness_signal, transition_step
 
 
 def main() -> None:
+    # Windows may inherit a legacy CP1252 console. JSON is always UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="strict")
     parser = argparse.ArgumentParser(prog="ai-agent-fabric")
     sub = parser.add_subparsers(dest="command", required=True)
     detect = sub.add_parser("detect", help="Detect host environment without executing project commands")
@@ -48,6 +53,13 @@ def main() -> None:
     restore.add_argument("task_id", nargs="?", help="Task id, exact title, or one-based number from the restore task list")
     restore.add_argument("--home", type=Path, default=default_fabric_home())
     restore.add_argument("--json", action="store_true")
+    recover = sub.add_parser("recover-unicode-package", help="Preview or migrate one legacy Unicode task package into a safe ASCII Socrates lifecycle")
+    recover.add_argument("target", type=Path)
+    recover.add_argument("source", help="Exact existing directory name below docs/specs/active")
+    recover.add_argument("--id", help="Optional lowercase ASCII kebab-case replacement id")
+    recover.add_argument("--apply", action="store_true", help="Apply the previewed rename and lifecycle recovery")
+    recover.add_argument("--home", type=Path, default=default_fabric_home())
+    recover.add_argument("--json", action="store_true")
     memory = sub.add_parser("memory", help="Manage a target repository's local memory")
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
     memory_init = memory_sub.add_parser("init")
@@ -278,6 +290,10 @@ def main() -> None:
         require_bound_project(args.target, args.home)
         picker = restore_picker(args.target, args.task_id)
         result = restore_task(args.target, picker["task_id"]) if picker["route"] == "restore" else picker
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "recover-unicode-package":
+        require_bound_project(args.target, args.home)
+        result = recover_unicode_package(args.target, args.source, args.id, apply=args.apply)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "memory" and args.memory_command == "init":
         # A release update journals its pending state before invoking the selected

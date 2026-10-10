@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ai_agent_fabric.task_specs import create_task, validate_task
+from ai_agent_fabric.task_specs import create_task, slugify, validate_task
 from ai_agent_fabric.distribution import install_release, onboard_project
 
 
@@ -19,6 +19,25 @@ def bound_project(root: Path) -> Path:
 
 
 class TaskSpecsTest(unittest.TestCase):
+    def test_russian_title_uses_english_ascii_task_id_and_preserves_title(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = bound_project(Path(directory))
+            title = "Проверить и упорядочить каталог компонентов"
+            package = create_task(project, title, "small-bug")
+            self.assertEqual(package.name, "review-and-organize-component-catalog")
+            task = __import__("json").loads((package / "task.json").read_text(encoding="utf-8"))
+            self.assertEqual(task["id"], "review-and-organize-component-catalog")
+            self.assertEqual(task["title"], title)
+
+    def test_english_title_has_predictable_kebab_slug(self) -> None:
+        self.assertEqual(slugify("Fix save error"), "fix-save-error")
+
+    def test_unicode_explicit_id_is_rejected_before_package_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = bound_project(Path(directory))
+            with self.assertRaisesRegex(ValueError, "ASCII kebab-case"):
+                create_task(project, "Русская задача", "small-bug", "русская-задача")
+            self.assertFalse((project / "docs/specs/active").exists())
     def test_small_bug_has_only_lightweight_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = bound_project(Path(directory))

@@ -27,3 +27,6 @@ Restoration may reactivate Socrates' durable session record, but it does not exe
 project command, edit project files, or advance a Harness cursor. Socrates must inspect
 any returned retry, block, or escalation outcome before selecting the next bounded
 action.
+
+If `restore` fails, stop project work. Root may only report the failure and perform
+an explicit Socrates recovery; it must not continue the task itself.

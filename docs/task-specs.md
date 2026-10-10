@@ -6,6 +6,16 @@
 root must be a relative path inside the target project; absolute paths and parent
 traversal are rejected.
 
+## Portable task identifiers
+
+Task titles may use any language and are retained verbatim in `task.json.title`.
+Fabric derives task IDs only as lowercase ASCII kebab-case. Russian titles use a
+deterministic English glossary with ASCII transliteration fallback; explicit `--id`
+values must already be ASCII kebab-case and are rejected before any state is written.
+Use `recover-unicode-package <project> <legacy-directory> --json` to preview a
+legacy Unicode package migration, then repeat with `--apply` to rename it, update its
+metadata, and create its Socrates lifecycle through the supported API.
+
 ## Work classes
 
 ```text
