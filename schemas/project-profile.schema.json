@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric project profile",
+  "type": "object",
+  "required": ["schema_version", "project_name", "commands", "integrations", "task_specs", "fabric", "memory", "secrets"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 3},
+    "project_name": {"type": "string", "minLength": 1},
+    "commands": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["family", "command"],
+        "additionalProperties": false,
+        "properties": {
+          "family": {"enum": ["python", "bash"]},
+          "command": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "integrations": {
+      "type": "object",
+      "required": ["work_tracking"],
+      "additionalProperties": false,
+      "properties": {"work_tracking": {"const": ".agent-fabric/config/work-tracking.json"}}
+    },
+    "task_specs": {
+      "type": "object",
+      "required": ["root"],
+      "additionalProperties": false,
+      "properties": {"root": {"type": "string", "minLength": 1}}
+    },
+    "fabric": {
+      "type": "object",
+      "required": ["binding"],
+      "additionalProperties": false,
+      "properties": {"binding": {"const": ".agent-fabric/fabric-binding.json"}}
+    },
+    "memory": {
+      "type": "object",
+      "required": ["retention"],
+      "additionalProperties": false,
+      "properties": {"retention": {"const": "project-local"}}
+    },
+    "secrets": {
+      "type": "object",
+      "required": ["allowed_root"],
+      "additionalProperties": false,
+      "properties": {"allowed_root": {"type": "string", "minLength": 1}}
+    }
+  }
+}

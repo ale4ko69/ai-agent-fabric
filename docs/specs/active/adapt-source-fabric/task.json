@@ -1,0 +1,19 @@
+{
+  "id": "adapt-source-fabric",
+  "title": "Adapt the established Agent Fabric into a global Fabric with project overlays",
+  "work_class": "planned",
+  "status": "implementation-active",
+  "tracker": {
+    "provider": "none",
+    "reference": null
+  },
+  "created_at": "2026-10-10",
+  "canonical_artifacts": {
+    "spec": "spec.md",
+    "research": "research.md",
+    "plan": "plan.md",
+    "opponent": "kepler.md",
+    "tasks": "tasks.md",
+    "session_state": "session-state.md"
+  }
+}

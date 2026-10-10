@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "spec_revision": 1,
+  "plan_revision": 1,
+  "artifact_digests": {
+    "spec.md": "d260d5dd6ef1f9446c1182e228dfc3ea998e01c738c196b0255e8da15d79d88d",
+    "research.md": "3a2ccfa48164a10a41706f150a2dc02af5504de253988da805336ab7ff994dd1",
+    "plan.md": "8c77a0567d4a91201c812b48e98d3ece9f302a144597e7681db12f33ed705fa4"
+  },
+  "kepler_verdict_sha256": null,
+  "approved": false,
+  "approved_by": null,
+  "approval_method": null,
+  "approved_at": null
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric work-tracking configuration",
+  "type": "object",
+  "required": ["schema_version", "provider", "enabled", "write_policy"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "provider": { "enum": ["none", "project-adapter"] },
+    "adapter": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" }
+      },
+      "additionalProperties": false
+    },
+    "enabled": { "type": "boolean" },
+    "write_policy": {
+      "type": "object",
+      "required": ["require_user_approval", "allowed_actions"],
+      "properties": {
+        "require_user_approval": { "type": "boolean" },
+        "allowed_actions": {
+          "type": "array",
+          "items": { "enum": ["read", "comment", "transition", "create"] },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "content": { "type": "object" },
+    "workflow": { "type": "object" }
+  },
+  "additionalProperties": false
+}

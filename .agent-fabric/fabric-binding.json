@@ -1,0 +1,8 @@
+{
+  "client": "codex",
+  "enabled_packs": [],
+  "fabric_release": "0.1.11",
+  "profile": ".agent-fabric/profile.json",
+  "project_overlay": ".agent-fabric/project-overlay.md",
+  "schema_version": 1
+}

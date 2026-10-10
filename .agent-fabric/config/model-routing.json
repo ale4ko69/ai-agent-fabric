@@ -1,0 +1,60 @@
+{
+  "role_tiers": {
+    "dev": {
+      "allowed": [
+        "standard",
+        "deep"
+      ],
+      "capability_floor": "standard",
+      "cost_policy": "balanced"
+    },
+    "explore": {
+      "allowed": [
+        "standard",
+        "deep"
+      ],
+      "capability_floor": "standard",
+      "cost_policy": "minimize"
+    },
+    "opponent": {
+      "allowed": [
+        "standard",
+        "deep"
+      ],
+      "capability_floor": "standard",
+      "cost_policy": "minimize"
+    },
+    "orchestrator": {
+      "allowed": [
+        "standard",
+        "deep"
+      ],
+      "capability_floor": "standard",
+      "cost_policy": "balanced"
+    },
+    "plan": {
+      "allowed": [
+        "deep"
+      ],
+      "capability_floor": "deep",
+      "cost_policy": "quality-first"
+    },
+    "review": {
+      "allowed": [
+        "standard",
+        "deep"
+      ],
+      "capability_floor": "standard",
+      "cost_policy": "minimize"
+    },
+    "validation": {
+      "allowed": [
+        "standard",
+        "deep"
+      ],
+      "capability_floor": "standard",
+      "cost_policy": "minimize"
+    }
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,20 @@
+{
+  "commands": {},
+  "fabric": {
+    "binding": ".agent-fabric/fabric-binding.json"
+  },
+  "integrations": {
+    "work_tracking": ".agent-fabric/config/work-tracking.json"
+  },
+  "memory": {
+    "retention": "project-local"
+  },
+  "project_name": "ai-agent-fabric",
+  "schema_version": 3,
+  "secrets": {
+    "allowed_root": ".agent-fabric/secrets"
+  },
+  "task_specs": {
+    "root": "docs/specs"
+  }
+}

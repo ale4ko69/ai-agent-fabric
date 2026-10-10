@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric project capabilities",
+  "type": "object",
+  "required": ["schema_version", "requirements", "enabled_packs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "requirements": {
+      "type": "object",
+      "required": ["bash", "python", "git"],
+      "additionalProperties": false,
+      "properties": {
+        "bash": {"enum": ["required", "optional", "forbidden"]},
+        "python": {"enum": ["required", "optional", "forbidden"]},
+        "git": {"enum": ["required", "optional", "forbidden"]}
+      }
+    },
+    "enabled_packs": {
+      "type": "array",
+      "items": {"enum": ["documentation", "ui-ux", "ui-verification", "validation", "knowledge-publication"]},
+      "uniqueItems": true
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric project binding",
+  "type": "object",
+  "required": ["schema_version", "fabric_release", "client", "profile", "project_overlay", "enabled_packs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "fabric_release": {"type": "string", "minLength": 1},
+    "client": {"enum": ["codex", "copilot", "claude"]},
+    "profile": {"type": "string", "minLength": 1},
+    "project_overlay": {"type": "string", "minLength": 1},
+    "enabled_packs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  }
+}

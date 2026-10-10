@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric delegation result",
+  "type": "object",
+  "required": ["idempotency_key", "request_id", "session_id", "agent", "summary", "artifacts", "findings", "decisions"],
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+    "request_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+    "session_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+    "agent": {"enum": ["explore", "plan", "opponent", "dev", "review", "validation"]},
+    "summary": {"type": "string", "minLength": 1},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "additionalProperties": false,
+        "properties": {"path": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"}}
+      }
+    },
+    "findings": {"$ref": "#/$defs/indexItems"},
+    "decisions": {"$ref": "#/$defs/indexItems"}
+  },
+  "$defs": {
+    "indexItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "references"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+          "status": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+          "references": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"}}
+        }
+      }
+    }
+  }
+}

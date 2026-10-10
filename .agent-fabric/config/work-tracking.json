@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "provider": "none",
+  "schema_version": 1,
+  "write_policy": {
+    "allowed_actions": [
+      "read"
+    ],
+    "require_user_approval": true
+  }
+}

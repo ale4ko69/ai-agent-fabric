@@ -1,0 +1,44 @@
+# Tasks
+
+- [x] Classify the work as planned.
+- [x] Create the local task package.
+- [x] Write initial specification, research, and plan.
+- [x] Obtain initial independent Kepler verdict: `challenge`.
+- [x] Revise the plan within scope to address the first challenge.
+- [x] Obtain fresh independent Kepler verdict for revision 1: `challenge`.
+- [x] Complete the source-linked migration register and per-binding environment audit.
+- [x] Inventory source artifact families and exclude generated runtime data.
+- [x] Generate a non-sensitive occurrence index for every static environment-binding candidate.
+- [x] Resolve each occurrence to a decision record and final destination class.
+- [x] Record final or explicitly deferred disposition for every environment occurrence.
+- [x] Inventory the source configuration family and the workflow as root artifacts.
+- [x] Obtain Kepler verdict for revision 2: `advice`.
+- [x] Implement approved capability/profile/gate data model; deferred items remain prohibited.
+- [x] Establish the machine-readable baseline agent-profile and capability data model.
+- [x] Establish portable declarative gate data and a requirement preflight.
+- [x] Establish the approved durable delegation-result outbox and orchestrator acknowledgement model.
+- [x] Consolidate the seven readable agent profiles and remove superseded duplicate role documents.
+- [x] Revise the plan to revision 2, then obtain a fresh Kepler verdict.
+- [x] Implement the approved shared delegation-result hand-off and memory lifecycle foundation.
+- [x] Consolidate one-profile-per-agent documentation.
+- [x] Add recoverable local task-package archive lifecycle.
+- [x] Add Bash hidden-prompt secret entry constrained to a declared project-local destination.
+- [x] Add project-local harness trace and read-only resume snapshot.
+- [x] Establish the approved global-distribution and project-overlay decision record.
+- [x] Add release, client-adapter, and project-binding manifest contracts.
+- [x] Implement explicit global Fabric installation and release management.
+- [x] Implement explicit project binding and per-client adapter lifecycle.
+- [x] Define global-bootstrap onboarding for fresh and cloned repositories.
+- [x] Add immutable gate-registry validation and project-local checkpoint records.
+- [x] Document and enforce the project-only episodic-memory boundary.
+- [x] Consolidate the client-neutral development workflow without project-bound commands.
+- [x] Add project-local delegation request and result envelopes.
+- [x] Connect the declared Bash hidden-prompt secret policy to the selected release and bound project lifecycle.
+- [x] Add a local planned-task implementation gate with revision-matched Kepler verdict and human approval.
+- [x] Bind planned-task verdict and approval to reviewed artifact digests and an interactive human confirmation.
+- [x] Review and classify the source CLI-skill family without transferring workplace-specific command surfaces.
+- [x] Conduct a broad Kepler static audit and begin its boundary/integrity remediation block.
+- [x] Adapt workflow, harness, environment, and installers.
+- [x] Verify the accepted Windows environment/client matrix; native Linux and WSL are explicitly deferred by the owner for this release.
+- [x] Audit duplicates and propose only safe archival/removal; no deletion candidate exists.
+- [x] Re-audit every source configuration, command skill, tool, script, contract, and workflow rule against the actual target implementation; record only portable adaptations, optional packs, and exclusions.

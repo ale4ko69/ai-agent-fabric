@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric model routing",
+  "type": "object",
+  "required": ["schema_version", "role_tiers"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "role_tiers": {
+      "type": "object",
+      "required": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"],
+      "propertyNames": {
+        "enum": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["capability_floor", "cost_policy", "allowed"],
+        "properties": {
+          "capability_floor": { "enum": ["economy", "standard", "deep"] },
+          "cost_policy": { "enum": ["minimize", "balanced", "quality-first"] },
+          "allowed": {
+            "type": "array",
+            "items": { "enum": ["economy", "standard", "deep"] },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

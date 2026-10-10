@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric declarative gates",
+  "type": "object",
+  "required": ["schema_version", "gates"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "transition", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "transition": {"type": "string", "minLength": 1},
+          "evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}
+        }
+      }
+    }
+  }
+}

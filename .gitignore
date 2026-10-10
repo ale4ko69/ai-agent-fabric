@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+build/
+*.db
+*.db-shm
+*.db-wal
+.agent-fabric/backups/
+.agent-fabric/harness/

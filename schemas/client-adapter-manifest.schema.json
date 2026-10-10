@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric client adapter manifest",
+  "type": "object",
+  "required": ["schema_version", "client", "surface", "loading", "entry_points", "project_overlay", "delivery", "lifecycle", "hooks"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 3},
+    "client": {"enum": ["codex", "copilot", "claude"]},
+    "surface": {"type": "string", "minLength": 1},
+    "loading": {
+      "type": "object",
+      "required": ["mode", "sequence"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["ordered", "combined", "additive"]},
+        "sequence": {
+          "type": "array",
+          "items": {"enum": ["managed", "user", "global-bootstrap", "project-overlay", "task-package"]},
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      }
+    },
+    "entry_points": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["scope", "path", "purpose"],
+        "additionalProperties": false,
+        "properties": {
+          "scope": {"const": "user"},
+          "path": {"type": "string", "minLength": 1},
+          "purpose": {"const": "global-bootstrap"}
+        }
+      }
+    },
+    "project_overlay": {
+      "type": "object",
+      "required": ["path", "loader"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"const": ".agent-fabric/project-overlay.md"},
+        "loader": {"const": "global-bootstrap"}
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "required": ["default", "supported"],
+      "additionalProperties": false,
+      "properties": {
+          "default": {"enum": ["symlink", "import", "wrapper", "managed-block", "unsupported"]},
+        "supported": {
+          "type": "array",
+            "items": {"enum": ["symlink", "import", "wrapper", "managed-block"]},
+          "uniqueItems": true
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "required": ["preview", "backup", "rollback", "uninstall"],
+      "additionalProperties": false,
+      "properties": {
+        "preview": {"const": true},
+        "backup": {"type": "boolean"},
+        "rollback": {"type": "boolean"},
+        "uninstall": {"type": "boolean"}
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "required": ["mode", "events"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["unsupported", "adapter"]},
+        "events": {
+          "type": "array",
+          "items": {"enum": ["session-start", "pre-tool-use", "post-tool-use", "checkpoint"]},
+          "uniqueItems": true
+        },
+        "implementation": {
+          "type": "object",
+          "required": ["client_version", "hook_point", "handler", "delivery", "ownership_record", "rollback", "uninstall"],
+          "additionalProperties": false,
+          "properties": {
+            "client_version": {"type": "string", "minLength": 1},
+            "hook_point": {"type": "string", "minLength": 1},
+            "handler": {"type": "string", "minLength": 1},
+            "delivery": {"enum": ["symlink", "import", "wrapper"]},
+            "ownership_record": {"const": "client-record"},
+            "rollback": {"const": true},
+            "uninstall": {"const": true}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "unsupported"}}},
+          "then": {"properties": {"events": {"maxItems": 0}}, "not": {"required": ["implementation"]}}
+        },
+        {
+          "if": {"properties": {"mode": {"const": "adapter"}}},
+          "then": {"properties": {"events": {"minItems": 1}}, "required": ["implementation"]}
+        }
+      ]
+    }
+  }
+}

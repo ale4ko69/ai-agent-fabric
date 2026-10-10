@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "validate-fabric-self-hosting-installation",
+  "title": "Validate Fabric self-hosting installation",
+  "work_class": "planned",
+  "status": "active",
+  "tracker": {
+    "provider": "none",
+    "reference": null,
+    "url": null
+  },
+  "workflow": {
+    "schema_version": 1,
+    "spec_revision": 1,
+    "plan_revision": 1
+  }
+}

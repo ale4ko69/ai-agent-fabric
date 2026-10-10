@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric task metadata",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "work_class", "status", "tracker", "workflow"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "work_class": {"enum": ["small-bug", "planned"]},
+    "status": {"enum": ["active", "archived"]},
+    "tracker": {
+      "type": "object",
+      "required": ["provider", "reference", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "reference": {"type": ["string", "null"]},
+        "url": {"type": ["string", "null"]}
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": ["schema_version", "spec_revision", "plan_revision"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"const": 1},
+        "spec_revision": {"type": "integer", "minimum": 1},
+        "plan_revision": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

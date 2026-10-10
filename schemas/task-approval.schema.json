@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric planned-task approval",
+  "type": "object",
+  "required": ["schema_version", "spec_revision", "plan_revision", "artifact_digests", "kepler_verdict_sha256", "approved", "approved_by", "approval_method", "approved_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "spec_revision": {"type": "integer", "minimum": 1},
+    "plan_revision": {"type": "integer", "minimum": 1},
+    "artifact_digests": {
+      "type": "object",
+      "required": ["spec.md", "research.md", "plan.md"],
+      "additionalProperties": false,
+      "properties": {
+        "spec.md": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "research.md": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "plan.md": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "kepler_verdict_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "approved": {"type": "boolean"},
+    "approved_by": {"enum": ["human", null]},
+    "approval_method": {"enum": ["interactive-terminal", null]},
+    "approved_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

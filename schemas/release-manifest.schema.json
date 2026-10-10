@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric immutable release manifest",
+  "type": "object",
+  "required": ["schema_version", "version", "created_at", "memory", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 2},
+    "version": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "memory": {
+      "type": "object",
+      "required": ["schema_version", "minimum_compatible"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {"type": "integer", "minimum": 1},
+        "minimum_compatible": {"type": "integer", "minimum": 0}
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+    }
+  }
+}

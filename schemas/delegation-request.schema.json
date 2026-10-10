@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Agent Fabric delegation request",
+  "type": "object",
+  "required": ["idempotency_key", "session_id", "agent", "task_id", "scope_artifact", "input_artifacts", "required_outputs"],
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+    "session_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+    "agent": {"enum": ["explore", "plan", "opponent", "dev", "review", "validation"]},
+    "task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
+    "scope_artifact": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"},
+    "input_artifacts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"}
+    },
+    "required_outputs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"}
+    }
+  }
+}
