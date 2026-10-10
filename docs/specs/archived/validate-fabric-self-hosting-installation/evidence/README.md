@@ -44,9 +44,10 @@ from public evidence.
 
 ## Release-validation boundary
 
-The source now contains a new immutable release (`0.1.13`) with a trusted Codex plugin
-`SessionStart` hook. It has not been installed yet: release installation and binding
-update occur only after the completed branch is merged to `main`, as required for a
-self-hosting release. The source `restore` picker correctly listed every active task;
-selecting a task against the older `0.1.11` binding stopped with the explicit memory
-migration requirement rather than mutating state outside an approved project update.
+The completed `main` branch was released as immutable `0.1.13` with the trusted Codex
+plugin `SessionStart` hook. The required release preview preceded installation. The
+project binding was then previewed and updated from `0.1.11` to `0.1.13`, including an
+explicit memory-schema migration from 2 to 8 and binding backup. The installed global
+launcher returned the numbered task picker and successfully restored task number 2;
+`project context` now reports matching bound/current release `0.1.13` with no pending
+update.

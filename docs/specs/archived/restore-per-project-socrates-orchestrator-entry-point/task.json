@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "id": "implement-trusted-codex-lifecycle-hooks-and-cross-client-behavior",
-  "title": "Implement trusted Codex lifecycle hooks and cross-client behavior",
+  "id": "restore-per-project-socrates-orchestrator-entry-point",
+  "title": "Restore per-project Socrates task lifecycle and Guards",
   "work_class": "planned",
-  "status": "active",
+  "status": "archived",
   "tracker": {
     "provider": "none",
     "reference": null,

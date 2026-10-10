@@ -1,6 +1,6 @@
 # Session state
 
-Status: ACTIVE — architecture and source-to-target gap analysis
+Status: COMPLETE — installed release/binding restore verification complete.
 
 ## Progress
 
@@ -14,6 +14,8 @@ Status: ACTIVE — architecture and source-to-target gap analysis
 - [x] Resolve Kepler P0 findings and obtain a fresh final PASS verdict.
 - [x] Design and implement the task-driven Socrates lifecycle and Guard persistence.
 - [x] Validate, obtain Kepler review, then complete the independent owner audit.
+- [x] Verify the installed global launcher picker and restore by selecting task number
+      2 after the binding's explicit release/memory update.
 
 ## Completion evidence
 
