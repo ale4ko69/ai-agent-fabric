@@ -19,6 +19,10 @@ the user explicitly confirms that preview:
 <fabric-launcher> start <project-root> --title "<title>" --type <planned|small-bug> --apply --json
 ```
 
+`--apply` creates the package **and starts the new task's project-local Socrates
+session**. It does not start a global/root orchestrator. Socrates now owns the task's
+delegation, durable memory, Guard failures, Harness signals, and next safe action.
+
 Choose `planned` for a feature, an understood bug requiring investigation, or a
 feature rework. It creates the spec, research, plan, Kepler verdict, and human
 approval artifacts. Choose `small-bug` only for a bounded known correction; it uses

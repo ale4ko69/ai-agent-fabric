@@ -80,7 +80,7 @@ All state-changing commands require a bound project and work only in that projec
 describe an unbound or incomplete project but never create or alter Fabric state.
 
 ```bash
-ai-agent-fabric harness signal <project> \
+ai-agent-fabric socrates signal <project> \
   --category user-correction --task-id <task-id> \
   --artifact docs/specs/active/<task-id>/evidence/feedback.md
 

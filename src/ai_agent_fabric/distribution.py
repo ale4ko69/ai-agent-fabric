@@ -33,7 +33,7 @@ RELEASE_MANIFEST_FILE = "release-manifest.json"
 PROJECT_BINDING_FILE = "fabric-binding.json"
 PROJECT_UPDATE_FILE = "pending-update.json"
 CLIENT_RECORD_DIRECTORY = "clients"
-CODEX_SKILL_NAMES = ("work", "start", "restore", "harness")
+CODEX_SKILL_NAMES = ("work", "start", "restore", "harness", "guards")
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+-]*$")
 SECRET_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,127}$")
 MANAGED_BLOCK_BEGIN = "<!-- AI-Agent-Fabric: begin -->"
@@ -46,6 +46,7 @@ RELEASE_ASSETS = (
     "README.md",
     "pyproject.toml",
     "src",
+    "core",
     "schemas",
     "scripts",
     "skills",
@@ -57,6 +58,7 @@ RELEASE_ASSETS = (
     "docs/execution-policy.md",
     "docs/gates.md",
     "docs/global-distribution.md",
+    "docs/guards.md",
     "docs/harness.md",
     "docs/manifests.md",
     "docs/memory.md",

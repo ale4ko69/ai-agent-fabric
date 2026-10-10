@@ -11,10 +11,12 @@ First run:
 <fabric-launcher> restore <project-root> <task-id> --json
 ```
 
-Use the returned task metadata, local artifacts, memory snapshot, pending delegation
-requests, and pending results to identify the next unfinished action. Treat completed
-artifacts as closed evidence; do not recreate them or restart the task from the
-beginning.
+The command resumes that task's project-local Socrates session, then returns task
+metadata, local artifacts, memory snapshot, Guard failures/outcomes, pending delegation
+requests, pending results, and the durable checklist. Treat completed artifacts as closed evidence; do not
+recreate them or restart the task from the beginning.
 
-This command is read-only. Do not execute a project command, edit files, or advance a
-Harness cursor merely because context was restored.
+Restoration may reactivate Socrates' durable session record, but it does not execute a
+project command, edit project files, or advance a Harness cursor. Socrates must inspect
+any returned retry, block, or escalation outcome before selecting the next bounded
+action.

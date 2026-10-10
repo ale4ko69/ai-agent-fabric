@@ -45,11 +45,12 @@ bounded edit + evidence   tasks + evidence     spec -> research -> plan
 
 ## Entry and restore discipline
 
-A client-facing task entrypoint is a router, not another workflow: it either restores
+A client-facing `work` entrypoint is a router, not another workflow: it either restores
 one known active task or starts new-task intake. It never silently starts over and never
-mixes multiple task packages. Restore is read-only: it reports the first unfinished
-applicable step, retains evidence for completed steps, and waits for direction before
-executing project work.
+mixes multiple task packages. `start --apply` creates a task package and activates that
+task's project-local Socrates session; `restore` reactivates the same session and
+returns its durable context. Neither executes project work merely because the session
+was started or restored.
 
 For new planned work, Socrates materializes the applicable workflow checklist in the
 task package. Each step is `pending`, `in_progress`, `done`, or `skipped`; a completed
@@ -86,9 +87,18 @@ registry; it is not a substitute for the underlying evidence.
 
 Specialist results enter the project-local outbox with an idempotency key. Socrates is
 the sole durable-memory writer and can replay unacknowledged results safely after an
-interruption. Resume is read-only until the task is reoriented. Closing a task requires
-the applicable local evidence and moves its package to a recoverable archive; it never
-deletes history.
+interruption. `harness resume` remains read-only; `restore` reactivates Socrates but
+does not execute project work. Closing a task requires the applicable local evidence
+and moves its package to a recoverable archive; it never deletes history.
+
+## Guards and concrete failures
+
+When a declared Gate or concrete command fails, Socrates first writes an evidence
+artifact, then records it through `guards failure`. Guards return a deterministic
+`retry`, `block`, or `escalate` outcome and never rerun work themselves. A
+`retry-then-escalate` policy retries only the first two failures for the same
+session/taxonomy/Guard, then escalates the third. A Harness behaviour signal is not a
+Guard failure and does not invoke a Guard. See [Guards](guards.md).
 
 ## Harness retrospective
 

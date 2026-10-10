@@ -12,6 +12,10 @@ from .project_state import state_path
 
 
 WORK_CLASSES = {"small-bug", "planned"}
+WORKFLOW_STEPS = {
+    "small-bug": ("intake", "evidence", "implementation", "review", "validation", "close-out"),
+    "planned": ("intake", "discovery", "plan", "kepler", "human-approval", "implementation", "review", "validation", "close-out"),
+}
 OUT_OF_SCOPE_DISPOSITIONS = {"none", "backlog", "amendment-request"}
 TASK_METADATA_FIELDS = {"schema_version", "id", "title", "work_class", "status", "tracker", "workflow"}
 
@@ -127,7 +131,8 @@ def create_task(project_root: Path, title: str, work_class: str, task_id: str | 
     evidence = package / "evidence"
     evidence.mkdir(parents=True)
     _write(package / "task.json", _task_metadata(stable_id, title, work_class))
-    _write(package / "tasks.md", f"# Tasks — {title}\n\n- [ ] Define the next verified action.\n")
+    checklist = "\n".join(f"- [ ] `{step}`" for step in WORKFLOW_STEPS[work_class])
+    _write(package / "tasks.md", f"# Tasks — {title}\n\n{checklist}\n")
     _write(evidence / "README.md", "# Evidence\n\nStore durable verification evidence here.\n")
     if work_class == "planned":
         _write(package / "spec.md", f"# {title}\n\n## User Value\n\n## Scope\n\n## Non-Goals\n\n## Acceptance Criteria\n\n## Constraints\n\n## Open Questions\n")
@@ -171,6 +176,12 @@ def create_task(project_root: Path, title: str, work_class: str, task_id: str | 
         )
         _write(package / "session-state.md", "# Session state\n\nStatus: PENDING\n\n## Progress\n\n- [ ] Task not started\n")
     return package
+
+
+def workflow_steps(work_class: str) -> list[str]:
+    if work_class not in WORKFLOW_STEPS:
+        raise ValueError(f"Unsupported work class: {work_class}")
+    return list(WORKFLOW_STEPS[work_class])
 
 
 def archive_task(project_root: Path, task_id: str, reason: str) -> Path:

@@ -65,7 +65,8 @@ flowchart TD
     fabricHome["Global Fabric home"]
     release["Versioned release\nroles, gates, canonical skills"]
     launcher["Global launcher\nai-agent-fabric"]
-    codex["Codex Desktop\nplugin skills and managed AGENTS block"]
+    codexDesktop["Codex Desktop\nplugin skills + managed AGENTS block"]
+    codexCli["Codex CLI\nmanaged AGENTS block + launcher"]
     copilot["Copilot CLI\nmanaged user bootstrap"]
     claude["Claude Code\nmanaged user import"]
     binding["Project binding\n.agent-fabric/fabric-binding.json"]
@@ -73,15 +74,16 @@ flowchart TD
     taskPackage["Task package\ndocs/specs/active/task-id"]
     memory["Project memory\n.agent-fabric/memory.db"]
     harness["Project Harness\ntrace, signals, retrospective cursor"]
-    socrates["Project Socrates workflow\nonly durable-memory writer"]
-    specialist["Bounded specialist result"]
+    socrates["Socrates protocol\nonly durable-memory writer"]
 
     fabricHome --> release
     fabricHome --> launcher
-    release --> codex
+    release --> codexDesktop
+    release --> codexCli
     release --> copilot
     release --> claude
-    codex --> binding
+    codexDesktop --> binding
+    codexCli --> binding
     copilot --> binding
     claude --> binding
     binding --> profile
@@ -92,13 +94,41 @@ flowchart TD
     socrates --> taskPackage
     socrates --> memory
     socrates --> harness
-    socrates --> specialist
-    specialist --> socrates
 ```
 
 The diagram shows ownership as well as loading: global release files are reusable, but
 the binding selects one release for one project. Task packages, memory, and Harness data
 remain project-local; a client plugin or bootstrap never makes them global.
+
+### Target per-project orchestration flow
+
+```mermaid
+flowchart TD
+    user["User"] --> socrates["Socrates\nproject orchestrator"]
+    state["Project state\nbinding, profile, task, memory"] --> socrates
+    socrates -->|delegates discovery| aristotle["Aristotle\nresearch and dependency evidence"]
+    aristotle -->|typed findings| socrates
+    socrates -->|delegates planning| plato["Plato\nscoped plan"]
+    plato -->|plan| socrates
+    socrates -->|requests challenge| kepler["Kepler\nevidence and scope challenge"]
+    kepler -->|verdict| socrates
+    socrates -->|asks approval| human["Human\nscope and decision gate"]
+    human -->|approval or direction| socrates
+    socrates -->|delegates approved work| heracles["Heracles\nimplementation"]
+    heracles -->|result and artifacts| socrates
+    socrates -->|delegates review| athena["Athena\nchange review"]
+    athena -->|review result| socrates
+    socrates -->|delegates validation| euclid["Euclid\nenabled contract validation"]
+    euclid -->|validation evidence| socrates
+    socrates -->|records trace, signal, evidence| harness["Project Harness\ntrace, signals, retrospective cursor"]
+    harness -->|retrospective input| socrates
+    socrates -->|archives evidence| archive["Task package and archive"]
+```
+
+This is the target execution contract: Socrates is the only role that writes durable
+project memory or Harness signals; every specialist returns a bounded result to
+Socrates. `start --apply` creates a task package and starts that task's Socrates
+session; `restore` resumes the same project-local session.
 
 ## Install and bind a project
 
@@ -140,6 +170,7 @@ Fabric home:
     start/SKILL.md      # preview and create a task package
     restore/SKILL.md    # read task context without restarting work
     harness/SKILL.md    # review project-local behavioural signals
+    guards/SKILL.md     # process concrete evidenced failures through Socrates
   adapters/<client>/bootstrap.md
 ```
 
@@ -147,11 +178,12 @@ The client never receives a copy of a project's memory, task package, credential
 profile in its skill installation. Those remain below the bound repository's
 `.agent-fabric/` directory and `docs/specs/`.
 
-| Client | User-level bootstrap | How Fabric skills are delivered | Project layer |
+| Client surface | User-level bootstrap | How Fabric skills are delivered | Project layer |
 | --- | --- | --- | --- |
 | Codex Desktop | Managed Fabric block in `~/.codex/AGENTS.md`. | The Codex plugin package ships the Fabric skills and exposes them under the plugin namespace, for example `$agent-fabric:agent-fabric-work`. The plugin installation is the normal delivery path; it does not require direct links in `~/.codex/skills`. | The bootstrap reads `.agent-fabric/fabric-binding.json` and `.agent-fabric/project-overlay.md`. Repository `AGENTS.md` remains project-owned. |
-| GitHub Copilot CLI | Managed Fabric block in `~/.copilot/copilot-instructions.md`. | The bootstrap points at the canonical Fabric release and launcher. The baseline does not copy Fabric skills into a repository or install a separate Copilot skill directory. | The same binding and project overlay; existing `.github/copilot-instructions.md`, `.github/instructions/`, and `.github/agents/` remain project-owned. |
-| Claude Code (Anthropic) | `~/.claude/CLAUDE.md` imports the Fabric bootstrap from the installed release. | The bootstrap points at the canonical Fabric release and launcher. The baseline does not copy Fabric skills into a repository or install a separate Claude skill directory. | The same binding and project overlay; existing `CLAUDE.md` and `.claude/` files remain project-owned. |
+| Codex CLI | The same managed Fabric block in `~/.codex/AGENTS.md`, plus the global launcher. | It uses the bootstrap-and-launcher protocol. It is not limited to the Desktop plugin cache; direct links in `~/.codex/skills` are not required by the plugin installation. | The same binding and project overlay; repository `AGENTS.md` remains project-owned. |
+| GitHub Copilot CLI | Managed Fabric block in `~/.copilot/copilot-instructions.md`. | The bootstrap points at the canonical Fabric release and launcher. This release verifies Copilot **CLI** only; it does not claim an IDE-extension adapter. | The same binding and project overlay; existing `.github/copilot-instructions.md`, `.github/instructions/`, and `.github/agents/` remain project-owned. |
+| Claude Code | `~/.claude/CLAUDE.md` imports the Fabric bootstrap from the installed release. | The bootstrap points at the canonical Fabric release and launcher. This release verifies **Claude Code** only; it does not claim an adapter for Claude's web or cloud chat surfaces. | The same binding and project overlay; existing `CLAUDE.md` and `.claude/` files remain project-owned. |
 
 ### Examples
 
@@ -164,9 +196,8 @@ $agent-fabric:agent-fabric-work
 The skill reads the bound project's context and invokes the global launcher. It does
 not carry task state inside the plugin cache.
 
-**Copilot CLI** and **Claude Code** load their user-level bootstrap first, then the
-bootstrap discovers the bound project. In both cases the portable CLI remains the
-source of truth:
+**Codex CLI**, **Copilot CLI**, and **Claude Code** load their applicable user-level
+bootstrap, then discover the bound project. Their common portable control plane is:
 
 ```bash
 ai-agent-fabric work /path/to/project --json
@@ -188,8 +219,10 @@ these command groups:
 | --- | --- | --- |
 | Inspect a project | `project status <project> --json` | Read-only binding and release status. |
 | Enter work | `work <project> [task-id] --json` | Read-only router: restores one task, starts intake, or asks for a task choice. |
-| Start a task | `start <project> --title "..." --type planned --json` | Previews a task package; `--apply` creates it only after approval. |
-| Restore task context | `restore <project> <task-id> --json` | Reads task metadata, artifacts, local memory, and pending delegation results. |
+| Start a task | `start <project> --title "..." --type planned --json` | Preview by default; `--apply` creates the package and starts that task's project-local Socrates lifecycle. |
+| Restore task context | `restore <project> <task-id> --json` | Resumes that task's Socrates session, then returns task metadata, artifacts, memory, failures, and pending delegation state. |
+| Process a concrete failure | `guards failure <project> ... --json` | Records Socrates-owned failure and Guard outcome from an existing evidence artifact; returns retry, block, or escalation. |
+| Advance task checklist | `socrates step <project> ... --json` | Socrates-only ordered step transition; completed steps cannot be restarted by restore. |
 | Inspect the host | `detect --json` | Read-only capability report. |
 | Inspect Harness | `harness health <project> --json` | Read-only health report for local state and pinned release. |
 
@@ -228,13 +261,10 @@ the specialist-result outbox. It is never shared with another project or the glo
 Fabric release.
 
 Socrates starts or reactivates a task session, records decisions and evidence, queues a
-delegation request, and acknowledges completed specialist results. The public memory
-commands reflect those stages:
+delegation request, and acknowledges completed specialist results. Specialists do not
+receive a public write command for that store. The supported read/recovery commands are:
 
 ```bash
-ai-agent-fabric memory start-session /path/to/project \
-  --session <task-id> --title "Short task title"
-
 ai-agent-fabric memory restore /path/to/project --session <task-id> --json
 ai-agent-fabric memory pending-requests /path/to/project --session <task-id> --json
 ai-agent-fabric memory pending-results /path/to/project --session <task-id> --json
@@ -256,6 +286,9 @@ or Harness logs.
 This distinction is intentional: a recovery command can reconstruct context after a
 crash without silently resuming execution. Socrates reads the restored state, identifies
 the first unfinished safe step, and waits for the applicable workflow direction.
+
+`restore` refuses to invent a new empty memory database for an existing task package.
+That missing-state condition is surfaced for recovery instead of restarting completed work.
 
 ## Delegation and the lifecycle
 
@@ -318,7 +351,7 @@ Relevant categories include `user-correction`, `missed-instruction`,
 not proof; the task artifact provides the evidence.
 
 ```bash
-ai-agent-fabric harness signal /path/to/project \
+ai-agent-fabric socrates signal /path/to/project \
   --category user-correction --task-id <task-id> \
   --artifact docs/specs/active/<task-id>/evidence/feedback.md
 
@@ -329,6 +362,29 @@ Client lifecycle hooks are adapter-owned. When an adapter has no installed hook,
 Fabric does not claim to read private chat history or capture corrections automatically:
 the configured Socrates workflow invokes the explicit command. See [Harness](docs/harness.md).
 
+### Errors, signals, and Guards
+
+There are two different records; they must not be conflated.
+
+```mermaid
+flowchart LR
+    failure["Concrete command or gate failure"] --> evidence["Task evidence artifact\nwhat failed and how it was observed"]
+    correction["User corrects agent behaviour"] --> signal["Socrates records minimal Harness signal\ncategory + task id + artifact reference"]
+    evidence --> failureRecord["Structured failure record\nfor Guards"]
+    signal --> retrospective["Harness retrospective\npattern investigation only"]
+    failureRecord --> guards["Guards / Process Gate\nblock, retry, or escalate by policy"]
+    guards --> socrates["Socrates selects the next safe action"]
+    retrospective --> kepler["Kepler + human review\nbounded improvement proposal"]
+```
+
+`guards failure` records the left-hand path: Socrates supplies a stable failure key,
+a stable incident key, a release-declared Guard, and an existing project-local evidence artifact. The pinned
+Guard registry supplies taxonomy and policy. The durable outcome is `block`, `retry`,
+or `escalate`; it is included in the next task restore.
+The command does not rerun work itself. `socrates signal` remains the independent
+right-hand path: a correction is retrospective input, never automatic Guard execution.
+See [Guards](docs/guards.md).
+
 ## Current status
 
 The core adaptation and Windows/Git-Bash validation are recorded in this repository.
@@ -337,8 +393,9 @@ or unsupported rows rather than implied support. See the
 [validation matrix](docs/validation-matrix.md).
 
 The current release defines Socrates as the orchestration role and durable-memory
-writer. A distinct, client-launched per-project Socrates entrypoint is planned work,
-not an existing command; the README does not represent it as already delivered.
+writer. `start --apply` now starts the new task's project-local Socrates session, and
+`restore` resumes that task's session. There is no standalone `start orchestrator`
+command.
 
 ## Development
 
@@ -359,6 +416,7 @@ Before changing the runtime, read [AGENTS.md](AGENTS.md), then
 - [Memory boundary](docs/memory.md)
 - [Delegation](docs/delegation.md)
 - [Harness](docs/harness.md)
+- [Guards](docs/guards.md)
 - [Gates](docs/gates.md)
 - [Client adapters](docs/agent-clients.md)
 - [Global distribution](docs/global-distribution.md)

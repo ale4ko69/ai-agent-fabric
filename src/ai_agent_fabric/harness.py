@@ -8,7 +8,8 @@ from typing import Any
 from datetime import datetime, timezone
 
 from .gates import load_gates, validate_checkpoint
-from .memory import pending_requests, pending_results, require_current_schema, restore
+from .socrates import record_guard_failure
+from .memory import mark_guard_trace_delivered, pending_guard_traces, pending_requests, pending_results, require_current_schema, restore
 from .task_specs import package_path
 from .distribution import default_fabric_home, project_status, release_path
 from .project_state import state_path
@@ -17,7 +18,7 @@ from .project_state import state_path
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
 TRACE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 TRACE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
-TRACE_STRING_FIELDS = {"kind", "gate", "transition", "task_id", "actor", "status"}
+TRACE_STRING_FIELDS = {"kind", "gate", "transition", "task_id", "actor", "status", "idempotency_key"}
 TRACE_LIST_FIELDS = {"required_evidence", "supplied_evidence", "artifacts"}
 RETROSPECTIVE_SIGNAL_CATEGORIES = {
     "user-correction",
@@ -49,7 +50,7 @@ def retrospective_state_path(project_root: Path) -> Path:
     return state_path(project_root, "harness/retrospective-state.json")
 
 
-def append_trace(project_root: Path, event: dict[str, Any]) -> Path:
+def _append_trace(project_root: Path, event: dict[str, Any]) -> Path:
     """Append a typed, non-secret audit event with no free-text payloads."""
     if not isinstance(event, dict):
         raise ValueError("trace event must be a JSON object")
@@ -57,13 +58,41 @@ def append_trace(project_root: Path, event: dict[str, Any]) -> Path:
         raise ValueError("trace event must not contain a secret-like field")
     _validate_trace_event(event)
     path = state_path(project_root, "harness/trace.jsonl", create_parents=True)
+    if "idempotency_key" in event and path.is_file():
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    existing = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(existing, dict) and existing.get("idempotency_key") == event["idempotency_key"]:
+                    return path
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
     return path
 
 
-def record_checkpoint(project_root: Path, gate_id: str, evidence: list[str], fabric_home: Path | None = None) -> dict[str, Any]:
-    """Validate a shared-release gate and append only evidence names to local trace."""
+def flush_guard_traces(project_root: Path) -> list[str]:
+    """Deliver pending Guard audit events idempotently after interruption."""
+    delivered: list[str] = []
+    for item in pending_guard_traces(project_root):
+        _append_trace(project_root, item["event"])
+        mark_guard_trace_delivered(project_root, item["failure_key"])
+        delivered.append(item["failure_key"])
+    return delivered
+
+
+def record_checkpoint(
+    project_root: Path,
+    gate_id: str,
+    evidence: list[str],
+    fabric_home: Path | None = None,
+    *,
+    session_id: str | None = None,
+    failure_id: str | None = None,
+    failure_artifact: str | None = None,
+) -> dict[str, Any]:
+    """Validate a gate; a genuine validation failure becomes its Socrates Guard."""
     root = project_root.resolve()
     home = (fabric_home or default_fabric_home()).expanduser().resolve()
     status = project_status(root, home)
@@ -72,12 +101,24 @@ def record_checkpoint(project_root: Path, gate_id: str, evidence: list[str], fab
     binding_path = state_path(root, "fabric-binding.json")
     binding = json.loads(binding_path.read_text(encoding="utf-8"))
     registry_path = release_path(home, binding["fabric_release"]) / "core" / "gates.json"
-    checkpoint = validate_checkpoint(load_gates(registry_path), gate_id, evidence)
-    append_trace(root, {"kind": "gate-checkpoint", **checkpoint})
+    gates = load_gates(registry_path)
+    try:
+        checkpoint = validate_checkpoint(gates, gate_id, evidence)
+    except ValueError as error:
+        # Only this narrow validation boundary creates a checkpoint Guard. Binding,
+        # registry, and storage errors above remain operational errors, not gates.
+        if not all(isinstance(value, str) and value for value in (session_id, failure_id, failure_artifact)):
+            raise
+        failure = record_guard_failure(
+            root, session_id, failure_id, failure_id, "checkpoint", failure_artifact, home
+        )
+        flush_guard_traces(root)
+        return {"checkpoint": {"gate": gate_id, "status": "failed", "reason": str(error)}, "failure": failure["failure"]}
+    _append_trace(root, {"kind": "gate-checkpoint", **checkpoint})
     return checkpoint
 
 
-def record_signal(
+def _record_signal(
     project_root: Path,
     category: str,
     task_id: str | None = None,
@@ -170,7 +211,7 @@ def close_retrospective(
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(path)
-    append_trace(
+    _append_trace(
         root,
         {
             "kind": "retrospective-closed",

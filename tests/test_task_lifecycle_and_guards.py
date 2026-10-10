@@ -1,0 +1,270 @@
+from pathlib import Path
+from contextlib import redirect_stdout
+import io
+import json
+import sys
+import tempfile
+import unittest
+
+from ai_agent_fabric.__main__ import main
+from ai_agent_fabric.distribution import install_release, onboard_project
+from ai_agent_fabric.entrypoints import restore_task, start_task
+from ai_agent_fabric.harness import record_checkpoint
+from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, transition_step
+
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+
+
+class TaskLifecycleAndGuardsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        root = Path(self.directory.name)
+        self.project = root / "project"
+        self.project.mkdir()
+        self.home = root / "fabric-home"
+        install_release(SOURCE_ROOT, self.home, "test")
+        onboard_project(self.project, "codex", self.home, "test")
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_start_creates_task_and_starts_project_socrates(self) -> None:
+        result = start_task(self.project, "Example task", "small-bug", "example-task")
+
+        self.assertEqual(result["socrates"]["lifecycle"], "started")
+        self.assertEqual(result["socrates"]["next_action"], "intake")
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["socrates"]["lifecycle"], "resumed")
+        self.assertEqual(restored["memory"]["session"]["id"], "example-task")
+        self.assertEqual(
+            [record["kind"] for record in restored["memory"]["records"]],
+            ["task-started", "task-restored"],
+        )
+
+    def test_guard_failure_is_durable_idempotent_and_distinct_from_harness_signals(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        evidence = self.project / "docs/specs/active/example-task/evidence"
+        for name in ("test-1.md", "test-2.md", "test-3.md"):
+            (evidence / name).write_text("# Guard evidence\n", encoding="utf-8")
+
+        first = record_guard_failure(
+            self.project,
+            "example-task",
+            "guard-failure-1",
+            "command-incident",
+            "command",
+            "docs/specs/active/example-task/evidence/test-1.md",
+            self.home,
+        )
+        duplicate = record_guard_failure(
+            self.project,
+            "example-task",
+            "guard-failure-1",
+            "command-incident",
+            "command",
+            "docs/specs/active/example-task/evidence/test-1.md",
+            self.home,
+        )
+        second = record_guard_failure(
+            self.project,
+            "example-task",
+            "guard-failure-2",
+            "command-incident",
+            "command",
+            "docs/specs/active/example-task/evidence/test-2.md",
+            self.home,
+        )
+        third = record_guard_failure(
+            self.project,
+            "example-task",
+            "guard-failure-3",
+            "command-incident",
+            "command",
+            "docs/specs/active/example-task/evidence/test-3.md",
+            self.home,
+        )
+
+        self.assertTrue(first["created"])
+        self.assertEqual(first["failure"]["outcome"], "retry")
+        self.assertFalse(duplicate["created"])
+        self.assertEqual(duplicate["failure"]["attempt"], 1)
+        self.assertEqual(second["failure"]["attempt"], 2)
+        self.assertEqual(second["failure"]["outcome"], "retry")
+        self.assertEqual(third["failure"]["attempt"], 3)
+        self.assertEqual(third["failure"]["outcome"], "escalate")
+
+        separate_incident = record_guard_failure(
+            self.project, "example-task", "guard-failure-new-incident", "new-incident", "command",
+            "docs/specs/active/example-task/evidence/test-3.md", self.home,
+        )
+        self.assertEqual(separate_incident["failure"]["attempt"], 1)
+        self.assertEqual(separate_incident["failure"]["outcome"], "retry")
+
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(len(restored["memory"]["guard_failures"]), 4)
+        self.assertEqual(len(restored["memory"]["guard_outcomes"]), 4)
+
+    def test_harness_signal_does_not_create_a_guard_failure(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        record_harness_signal(self.project, "user-correction", "example-task")
+
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["guard_failures"], [])
+        signals = self.project / ".agent-fabric/harness/signals.jsonl"
+        self.assertTrue(signals.is_file())
+
+    def test_block_policy_stops_at_the_first_failure(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        evidence = self.project / "docs/specs/active/example-task/evidence/scope.md"
+        evidence.write_text("# Guard evidence\n", encoding="utf-8")
+        result = record_guard_failure(
+            self.project,
+            "example-task",
+            "guard-failure-block",
+            "checkpoint-incident",
+            "checkpoint",
+            "docs/specs/active/example-task/evidence/scope.md",
+            self.home,
+        )
+        self.assertEqual(result["failure"]["status"], "blocked")
+        self.assertEqual(result["failure"]["outcome"], "block")
+
+    def test_guards_command_records_trace_after_durable_failure(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        artifact = self.project / "docs/specs/active/example-task/evidence/guard.md"
+        artifact.write_text("# Guard evidence\n", encoding="utf-8")
+        output = io.StringIO()
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "ai-agent-fabric", "guards", "failure", str(self.project),
+                "--session", "example-task",
+                "--idempotency-key", "guard-cli-failure-1",
+                "--incident-id", "guard-cli-incident",
+                "--guard", "checkpoint",
+                "--artifact", "docs/specs/active/example-task/evidence/guard.md",
+                "--home", str(self.home),
+                "--json",
+            ]
+            with redirect_stdout(output):
+                main()
+        finally:
+            sys.argv = original_argv
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["failure"]["outcome"], "block")
+        trace = self.project / ".agent-fabric/harness/trace.jsonl"
+        self.assertTrue(trace.is_file())
+        self.assertEqual(json.loads(trace.read_text(encoding="utf-8").strip())["kind"], "guard-failure")
+
+    def test_guard_rejects_missing_evidence_artifact(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        with self.assertRaisesRegex(ValueError, "evidence artifact"):
+            record_guard_failure(
+                self.project,
+                "example-task",
+                "missing-evidence",
+                "missing-incident",
+                "command",
+                "docs/specs/active/example-task/evidence/missing.md",
+                self.home,
+            )
+
+    def test_restore_recovers_a_pending_guard_trace_once(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        artifact = self.project / "docs/specs/active/example-task/evidence/trace.md"
+        artifact.write_text("# Guard evidence\n", encoding="utf-8")
+        record_guard_failure(
+            self.project,
+            "example-task",
+            "pending-trace-1",
+            "trace-incident",
+            "checkpoint",
+            "docs/specs/active/example-task/evidence/trace.md",
+            self.home,
+        )
+        trace = self.project / ".agent-fabric/harness/trace.jsonl"
+        self.assertFalse(trace.exists())
+
+        restore_task(self.project, "example-task")
+        restore_task(self.project, "example-task")
+
+        events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([event["idempotency_key"] for event in events], ["pending-trace-1"])
+
+    def test_failed_checkpoint_records_the_declared_checkpoint_guard(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        artifact = self.project / "docs/specs/active/example-task/evidence/checkpoint.md"
+        artifact.write_text("# Failed checkpoint evidence\n", encoding="utf-8")
+        output = io.StringIO()
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "ai-agent-fabric", "harness", "checkpoint", str(self.project),
+                "--gate", "intake",
+                "--evidence", "[]",
+                "--session", "example-task",
+                "--failure-id", "checkpoint-failure-1",
+                "--failure-artifact", "docs/specs/active/example-task/evidence/checkpoint.md",
+                "--home", str(self.home),
+                "--json",
+            ]
+            with redirect_stdout(output):
+                main()
+        finally:
+            sys.argv = original_argv
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["checkpoint"]["status"], "failed")
+        self.assertEqual(result["failure"]["guard"], "checkpoint")
+        self.assertEqual(result["failure"]["outcome"], "block")
+
+    def test_runtime_checkpoint_api_records_only_gate_validation_failures(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        artifact = self.project / "docs/specs/active/example-task/evidence/checkpoint-api.md"
+        artifact.write_text("# Failed checkpoint evidence\n", encoding="utf-8")
+
+        result = record_checkpoint(
+            self.project, "intake", [], self.home,
+            session_id="example-task", failure_id="checkpoint-api-failure", failure_artifact="docs/specs/active/example-task/evidence/checkpoint-api.md",
+        )
+
+        self.assertEqual(result["checkpoint"]["status"], "failed")
+        self.assertEqual(result["failure"]["guard"], "checkpoint")
+
+    def test_socrates_transition_restores_completed_checklist_without_restart(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        evidence = self.project / "docs/specs/active/example-task/evidence/intake.md"
+        evidence.write_text("# Intake complete\n", encoding="utf-8")
+        transition_step(self.project, "example-task", "intake", "in-progress")
+        transition_step(
+            self.project, "example-task", "intake", "done",
+            "docs/specs/active/example-task/evidence/intake.md", "intake-evidence-complete",
+        )
+
+        restored = restore_task(self.project, "example-task")
+
+        self.assertEqual(restored["socrates"]["next_action"], "evidence")
+        self.assertEqual(
+            restored["memory"]["steps"][0],
+            {"step_id": "intake", "status": "done", "closure_artifact": "docs/specs/active/example-task/evidence/intake.md", "closure_reason": "intake-evidence-complete"},
+        )
+        with self.assertRaisesRegex(ValueError, "immutable"):
+            transition_step(self.project, "example-task", "intake", "in-progress")
+
+    def test_socrates_rejects_closing_a_step_without_evidence_and_reason(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        with self.assertRaisesRegex(ValueError, "evidence artifact and reason"):
+            transition_step(self.project, "example-task", "intake", "done")
+
+    def test_restore_rejects_missing_memory_instead_of_recreating_steps(self) -> None:
+        package = self.project / "docs/specs/active/example-task"
+        package.mkdir(parents=True)
+        (package / "task.json").write_text(
+            json.dumps({"id": "example-task", "title": "Example task", "work_class": "small-bug"}), encoding="utf-8"
+        )
+        memory_db = self.project / ".agent-fabric/memory.db"
+        memory_db.unlink()
+        with self.assertRaisesRegex(FileNotFoundError, "memory is missing"):
+            restore_task(self.project, "example-task")

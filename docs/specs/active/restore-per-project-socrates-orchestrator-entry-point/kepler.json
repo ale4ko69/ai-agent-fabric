@@ -2,16 +2,16 @@
   "schema_version": 1,
   "spec_revision": 1,
   "plan_revision": 1,
-  "verdict": "pending",
+  "verdict": "advice",
   "reviewed_artifacts": [
     "spec.md",
     "research.md",
     "plan.md"
   ],
   "artifact_digests": {
-    "spec.md": "52635dae254c65150169e429a27484a3581e52b0f9c3b11dad7474f65cffb2e3",
-    "research.md": "2dde33ddb3fd4233846ee7eb6dfce8c635cb00608173218be85ceeb90d74c63d",
-    "plan.md": "f97f80eb08718aa7d08047c4c8505bfdd0e5432d0f3faa8fa20cd3c840218d38"
+    "spec.md": "56b8d102612722343ba6c9f5f550c2df60022863f7d558e6f0a6deb543bc124c",
+    "research.md": "1eb5868e15f8340cffd003a41f9559c5cdda2703d1ae96acb1967ae08b2686af",
+    "plan.md": "0e7a11a0f5b9c6ed26b52149aada6168c3a68410e6cc15c34b3da2a414c77f42"
   },
   "out_of_scope_disposition": "none"
 }

@@ -13,9 +13,10 @@ from .installer import load_project_profile, resolve_project_command
 from .environment import detect_environment
 from .memory import acknowledge_result, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
 from .task_specs import approve_planned_task, approval_preview, archive_task, create_task, implementation_readiness, validate_task
-from .harness import append_trace, close_retrospective, health_report, record_checkpoint, record_signal, resume_snapshot, retrospective_input
+from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
 from .entrypoints import restore_task, start_preview, start_task, work_router
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
+from .socrates import record_guard_failure, record_harness_signal, transition_step
 
 
 def main() -> None:
@@ -34,7 +35,7 @@ def main() -> None:
     work.add_argument("selector", nargs="?")
     work.add_argument("--home", type=Path, default=default_fabric_home())
     work.add_argument("--json", action="store_true")
-    start = sub.add_parser("start", help="Preview or explicitly create one project-local task package")
+    start = sub.add_parser("start", help="Preview or explicitly create one project-local task package and start Socrates")
     start.add_argument("target", type=Path)
     start.add_argument("--title", required=True)
     start.add_argument("--type", dest="work_class", required=True, choices=("small-bug", "planned"))
@@ -42,7 +43,7 @@ def main() -> None:
     start.add_argument("--home", type=Path, default=default_fabric_home())
     start.add_argument("--apply", action="store_true", help="Create the previewed package; omitted by default")
     start.add_argument("--json", action="store_true")
-    restore = sub.add_parser("restore", help="Read one bound project's task context without running project commands")
+    restore = sub.add_parser("restore", help="Resume one bound task's Socrates lifecycle without running project commands")
     restore.add_argument("target", type=Path)
     restore.add_argument("task_id")
     restore.add_argument("--home", type=Path, default=default_fabric_home())
@@ -56,49 +57,50 @@ def main() -> None:
     memory_quarantine.add_argument("target", type=Path)
     memory_quarantine.add_argument("--home", type=Path, default=default_fabric_home())
     memory_quarantine.add_argument("--json", action="store_true")
-    memory_start = memory_sub.add_parser("start-session", help="Create or reactivate one project-local orchestrator session")
-    memory_start.add_argument("target", type=Path)
-    memory_start.add_argument("--session", required=True)
-    memory_start.add_argument("--title", required=True)
-    memory_start.add_argument("--home", type=Path, default=default_fabric_home())
-    memory_record = memory_sub.add_parser("record", help="Append one non-secret orchestrator memory record")
-    memory_record.add_argument("target", type=Path)
-    memory_record.add_argument("--session", required=True)
-    memory_record.add_argument("--kind", required=True)
-    memory_record.add_argument("--summary", required=True)
-    memory_record.add_argument("--evidence", required=True, help="JSON object with non-secret, project-local evidence")
-    memory_record.add_argument("--home", type=Path, default=default_fabric_home())
-    memory_request = memory_sub.add_parser("submit-request", help="Queue one bounded project-local delegation request")
-    memory_request.add_argument("target", type=Path)
-    memory_request.add_argument("--request", required=True, help="Delegation-request JSON object")
-    memory_request.add_argument("--home", type=Path, default=default_fabric_home())
-    memory_dispatch = memory_sub.add_parser("dispatch-request", help="Mark one queued delegation request as dispatched")
-    memory_dispatch.add_argument("target", type=Path)
-    memory_dispatch.add_argument("--idempotency-key", required=True)
-    memory_dispatch.add_argument("--home", type=Path, default=default_fabric_home())
     memory_pending_requests = memory_sub.add_parser("pending-requests", help="List outstanding project-local delegation requests")
     memory_pending_requests.add_argument("target", type=Path)
     memory_pending_requests.add_argument("--session", required=True)
     memory_pending_requests.add_argument("--home", type=Path, default=default_fabric_home())
     memory_pending_requests.add_argument("--json", action="store_true")
-    memory_result = memory_sub.add_parser("submit-result", help="Queue one bounded specialist result for orchestrator acknowledgement")
-    memory_result.add_argument("target", type=Path)
-    memory_result.add_argument("--result", required=True, help="Delegation-result JSON object")
-    memory_result.add_argument("--home", type=Path, default=default_fabric_home())
     memory_pending_results = memory_sub.add_parser("pending-results", help="List specialist results waiting for acknowledgement")
     memory_pending_results.add_argument("target", type=Path)
     memory_pending_results.add_argument("--session", required=True)
     memory_pending_results.add_argument("--home", type=Path, default=default_fabric_home())
     memory_pending_results.add_argument("--json", action="store_true")
-    memory_acknowledge = memory_sub.add_parser("acknowledge-result", help="Persist one queued specialist result in local memory")
-    memory_acknowledge.add_argument("target", type=Path)
-    memory_acknowledge.add_argument("--idempotency-key", required=True)
-    memory_acknowledge.add_argument("--home", type=Path, default=default_fabric_home())
     memory_restore = memory_sub.add_parser("restore", help="Read one project-local memory session")
     memory_restore.add_argument("target", type=Path)
     memory_restore.add_argument("--session", required=True)
     memory_restore.add_argument("--home", type=Path, default=default_fabric_home())
     memory_restore.add_argument("--json", action="store_true")
+    guard = sub.add_parser("guards", help="Record and process concrete project-local Guard failures")
+    guard_sub = guard.add_subparsers(dest="guard_command", required=True)
+    guard_failure = guard_sub.add_parser("failure", help="Record one Guard failure and its declared policy outcome")
+    guard_failure.add_argument("target", type=Path)
+    guard_failure.add_argument("--session", required=True)
+    guard_failure.add_argument("--idempotency-key", required=True)
+    guard_failure.add_argument("--incident-id", required=True, help="Stable id for one retry lineage")
+    guard_failure.add_argument("--guard", required=True)
+    guard_failure.add_argument("--artifact", required=True, help="Safe project-relative evidence artifact reference")
+    guard_failure.add_argument("--home", type=Path, default=default_fabric_home())
+    guard_failure.add_argument("--json", action="store_true")
+    socrates = sub.add_parser("socrates", help="Run one task-local Socrates lifecycle transition")
+    socrates_sub = socrates.add_subparsers(dest="socrates_command", required=True)
+    socrates_step = socrates_sub.add_parser("step", help="Advance one declared checklist step")
+    socrates_step.add_argument("target", type=Path)
+    socrates_step.add_argument("--session", required=True)
+    socrates_step.add_argument("--step", required=True)
+    socrates_step.add_argument("--status", required=True, choices=("in-progress", "done", "skipped"))
+    socrates_step.add_argument("--closure-artifact", help="Existing project-relative evidence required for done or skipped")
+    socrates_step.add_argument("--closure-reason", help="Non-secret reason required for done or skipped")
+    socrates_step.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_step.add_argument("--json", action="store_true")
+    socrates_signal = socrates_sub.add_parser("signal", help="Record one Socrates-owned Harness signal")
+    socrates_signal.add_argument("target", type=Path)
+    socrates_signal.add_argument("--category", required=True, choices=("user-correction", "agent-drift", "missed-instruction", "scope-violation", "memory-gap", "repeated-failure", "security-concern", "friction"))
+    socrates_signal.add_argument("--task-id")
+    socrates_signal.add_argument("--artifact", help="Optional safe project-relative evidence artifact reference")
+    socrates_signal.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_signal.add_argument("--json", action="store_true")
     secret = sub.add_parser("secret", help="Use the selected release's hidden terminal prompt for a project-local secret")
     secret_sub = secret.add_subparsers(dest="secret_command", required=True)
     secret_prompt = secret_sub.add_parser("prompt", help="Store one secret through a hidden Bash prompt")
@@ -145,27 +147,19 @@ def main() -> None:
     harness_resume.add_argument("target", type=Path)
     harness_resume.add_argument("task_id")
     harness_resume.add_argument("--json", action="store_true")
-    harness_trace = harness_sub.add_parser("trace")
-    harness_trace.add_argument("target", type=Path)
-    harness_trace.add_argument("--event", required=True)
-    harness_trace.add_argument("--home", type=Path, default=default_fabric_home())
     harness_checkpoint = harness_sub.add_parser("checkpoint", help="Validate a shared Fabric gate and append its local checkpoint")
     harness_checkpoint.add_argument("target", type=Path)
     harness_checkpoint.add_argument("--gate", required=True)
     harness_checkpoint.add_argument("--evidence", required=True, help="JSON list of evidence names, never secret values")
+    harness_checkpoint.add_argument("--session", required=True, help="Task-local Socrates session that owns this gate")
+    harness_checkpoint.add_argument("--failure-id", help="Stable idempotency key required if the checkpoint fails")
+    harness_checkpoint.add_argument("--failure-artifact", help="Existing evidence artifact required if the checkpoint fails")
     harness_checkpoint.add_argument("--home", type=Path, default=default_fabric_home())
     harness_checkpoint.add_argument("--json", action="store_true")
     harness_health = harness_sub.add_parser("health")
     harness_health.add_argument("target", type=Path)
     harness_health.add_argument("--home", type=Path, default=default_fabric_home())
     harness_health.add_argument("--json", action="store_true")
-    harness_signal = harness_sub.add_parser("signal", help="Record a minimal project-local behavioural signal without conversation text")
-    harness_signal.add_argument("target", type=Path)
-    harness_signal.add_argument("--category", required=True, choices=("user-correction", "agent-drift", "missed-instruction", "scope-violation", "memory-gap", "repeated-failure", "security-concern", "friction"))
-    harness_signal.add_argument("--task-id")
-    harness_signal.add_argument("--artifact", help="Optional safe project-relative evidence artifact reference")
-    harness_signal.add_argument("--home", type=Path, default=default_fabric_home())
-    harness_signal.add_argument("--json", action="store_true")
     harness_retro_input = harness_sub.add_parser("retrospective-input", help="Read local Harness signals since the last approved retrospective")
     harness_retro_input.add_argument("target", type=Path)
     harness_retro_input.add_argument("--home", type=Path, default=default_fabric_home())
@@ -278,7 +272,7 @@ def main() -> None:
         require_bound_project(args.target, args.home)
         result = start_preview(args.target, args.title, args.work_class, args.id)
         if args.apply:
-            result["created"] = str(start_task(args.target, args.title, args.work_class, args.id))
+            result["created"] = start_task(args.target, args.title, args.work_class, args.id)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "restore":
         require_bound_project(args.target, args.home)
@@ -294,50 +288,39 @@ def main() -> None:
         require_bound_project(args.target, args.home)
         entries = quarantined_results(args.target.resolve())
         print(json.dumps(entries, ensure_ascii=False, indent=2) if args.json else entries)
-    elif args.command == "memory" and args.memory_command == "start-session":
-        require_bound_project(args.target, args.home)
-        start_session(args.target.resolve(), args.session, args.title)
-        print(args.session)
-    elif args.command == "memory" and args.memory_command == "record":
-        require_bound_project(args.target, args.home)
-        try:
-            evidence = json.loads(args.evidence)
-        except json.JSONDecodeError as error:
-            parser.error(f"--evidence must be a JSON object: {error}")
-        record(args.target.resolve(), args.session, args.kind, "orchestrator", args.summary, evidence)
-        print(args.session)
-    elif args.command == "memory" and args.memory_command == "submit-request":
-        require_bound_project(args.target, args.home)
-        try:
-            request = json.loads(args.request)
-        except json.JSONDecodeError as error:
-            parser.error(f"--request must be a JSON object: {error}")
-        print(submit_request(args.target.resolve(), request))
-    elif args.command == "memory" and args.memory_command == "dispatch-request":
-        require_bound_project(args.target, args.home)
-        print(mark_request_dispatched(args.target.resolve(), args.idempotency_key))
     elif args.command == "memory" and args.memory_command == "pending-requests":
         require_bound_project(args.target, args.home)
         items = pending_requests(args.target.resolve(), args.session)
         print(json.dumps(items, ensure_ascii=False, indent=2) if args.json else items)
-    elif args.command == "memory" and args.memory_command == "submit-result":
-        require_bound_project(args.target, args.home)
-        try:
-            result = json.loads(args.result)
-        except json.JSONDecodeError as error:
-            parser.error(f"--result must be a JSON object: {error}")
-        print(submit_result(args.target.resolve(), result))
     elif args.command == "memory" and args.memory_command == "pending-results":
         require_bound_project(args.target, args.home)
         items = pending_results(args.target.resolve(), args.session)
         print(json.dumps(items, ensure_ascii=False, indent=2) if args.json else items)
-    elif args.command == "memory" and args.memory_command == "acknowledge-result":
-        require_bound_project(args.target, args.home)
-        print(acknowledge_result(args.target.resolve(), args.idempotency_key))
     elif args.command == "memory" and args.memory_command == "restore":
         require_bound_project(args.target, args.home)
         snapshot = restore_memory(args.target.resolve(), args.session)
         print(json.dumps(snapshot, ensure_ascii=False, indent=2) if args.json else snapshot)
+    elif args.command == "guards" and args.guard_command == "failure":
+        require_bound_project(args.target, args.home)
+        result = record_guard_failure(
+            args.target.resolve(),
+            args.session,
+            args.idempotency_key,
+            args.incident_id,
+            args.guard,
+            args.artifact,
+            args.home,
+        )
+        flush_guard_traces(args.target)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "step":
+        require_bound_project(args.target, args.home)
+        result = transition_step(args.target.resolve(), args.session, args.step, args.status, args.closure_artifact, args.closure_reason)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "signal":
+        require_bound_project(args.target, args.home)
+        result = record_harness_signal(args.target, args.category, args.task_id, args.artifact)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "secret" and args.secret_command == "prompt":
         preview = secret_entry_preview(args.target, args.destination, args.label, args.home)
         if args.preview:
@@ -346,7 +329,7 @@ def main() -> None:
             enter_secret(args.target, args.destination, args.label, args.home)
     elif args.command == "spec" and args.spec_command == "create":
         require_bound_project(args.target, args.home)
-        print(create_task(args.target, args.title, args.work_class, args.id))
+        print(start_task(args.target, args.title, args.work_class, args.id)["package"])
     elif args.command == "spec" and args.spec_command == "validate":
         errors = validate_task(args.target, args.task_id)
         if errors:
@@ -383,28 +366,22 @@ def main() -> None:
     elif args.command == "harness" and args.harness_command == "resume":
         snapshot = resume_snapshot(args.target, args.task_id)
         print(json.dumps(snapshot, ensure_ascii=False, indent=2) if args.json else snapshot)
-    elif args.command == "harness" and args.harness_command == "trace":
-        require_bound_project(args.target, args.home)
-        try:
-            event = json.loads(args.event)
-        except json.JSONDecodeError as error:
-            parser.error(f"--event must be JSON: {error}")
-        print(append_trace(args.target, event))
     elif args.command == "harness" and args.harness_command == "checkpoint":
         require_bound_project(args.target, args.home)
+        if bool(args.failure_id) != bool(args.failure_artifact):
+            parser.error("--failure-id and --failure-artifact must be supplied together")
         try:
             evidence = json.loads(args.evidence)
         except json.JSONDecodeError as error:
             parser.error(f"--evidence must be a JSON list: {error}")
-        result = record_checkpoint(args.target, args.gate, evidence, args.home)
+        result = record_checkpoint(
+            args.target, args.gate, evidence, args.home,
+            session_id=args.session, failure_id=args.failure_id, failure_artifact=args.failure_artifact,
+        )
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "harness" and args.harness_command == "health":
         report = health_report(args.target, args.home)
         print(json.dumps(report) if args.json else report)
-    elif args.command == "harness" and args.harness_command == "signal":
-        require_bound_project(args.target, args.home)
-        signal = record_signal(args.target, args.category, args.task_id, args.artifact)
-        print(json.dumps(signal, ensure_ascii=False, indent=2) if args.json else signal)
     elif args.command == "harness" and args.harness_command == "retrospective-input":
         require_bound_project(args.target, args.home)
         report = retrospective_input(args.target)

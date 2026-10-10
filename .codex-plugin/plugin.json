@@ -1,12 +1,12 @@
 {
   "name": "agent-fabric",
-  "version": "0.1.11",
-  "description": "Portable project-scoped agent workflow, memory, task routing, and Harness retrospective skills.",
+  "version": "0.1.12",
+  "description": "Portable project-scoped task orchestration, Guards, memory, and Harness retrospective skills.",
   "skills": "./skills/",
   "interface": {
     "displayName": "Agent Fabric",
     "shortDescription": "Project-local agent workflow and memory",
-    "longDescription": "Reusable Agent Fabric skills for routing work, starting and restoring task packages, and reviewing project-local Harness lessons.",
+    "longDescription": "Reusable Agent Fabric skills for routing work, task-local Socrates start and restore, concrete Guards, and project-local Harness lessons.",
     "category": "Productivity",
     "capabilities": []
   }

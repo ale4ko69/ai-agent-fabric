@@ -56,6 +56,7 @@ in a command argument, or recorded in memory. Bash is required for this operatio
 user task
   -> environment detection (read-only)
   -> project profile + relevant memory recall
+  -> start task / restore task activates project-local Socrates
   -> orchestrator creates a delegation contract
   -> specialist returns a structured result
   -> orchestrator records result and evidence
@@ -74,6 +75,15 @@ only in the declared credential destination.
 
 The matching project-local request envelope keeps delegation scope as references to
 task artifacts rather than copying mutable prompt text. See [delegation contract](delegation.md).
+
+## Guard failures
+
+Concrete failures and behavioural signals have separate stores and effects. Socrates
+records a concrete failure only after an existing project-local evidence artifact is
+available. The durable Guard record selects `retry`, `block`, or `escalate` according
+to its declared policy and adds an identifier-only audit event to the Harness trace.
+It never reruns work or changes scope. A Harness signal is retrospective input only and
+cannot invoke a Guard. See [Guards](guards.md).
 
 ## Project-local harness
 

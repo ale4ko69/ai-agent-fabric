@@ -1,6 +1,6 @@
 # Task specs
 
-`spec create` creates a durable, project-local task package under
+`spec create` is a compatibility alias that creates a durable, project-local task package and starts its Socrates lifecycle under
 `<profile.task_specs.root>/active/<task-id>/` (by default,
 `docs/specs/active/<task-id>/`). It never contacts an external tracker. The configured
 root must be a relative path inside the target project; absolute paths and parent
@@ -26,8 +26,8 @@ instances local to the project.
 ## Commands
 
 ```text
-ai-agent-fabric spec create <project> --type small-bug --title "Fix save error"
-ai-agent-fabric spec create <project> --type planned --title "Add account export"
+ai-agent-fabric start <project> --type small-bug --title "Fix save error" --apply
+ai-agent-fabric start <project> --type planned --title "Add account export" --apply
 ai-agent-fabric spec validate <project> <task-id>
 ai-agent-fabric spec readiness <project> <task-id> --json
 ai-agent-fabric spec approve <project> <task-id> --preview

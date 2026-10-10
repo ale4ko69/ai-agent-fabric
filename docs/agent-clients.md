@@ -36,7 +36,9 @@ and reversible lifecycle are reviewed. See [client-adapter evidence](client-adap
 The selected project model-routing configuration chooses affordable models per role.
 It may affect what work an agent performs, but it cannot create a hook, expose a
 different project's memory, or override an adapter's declared capability. Without an
-adapter hook, the launcher records the same project-local Harness signals manually.
+adapter hook, the task-local Socrates workflow invokes the launcher to record the same
+project-local Harness signals manually. Specialists return evidence to Socrates; they
+do not write Harness signals or Guard failures themselves.
 
 ## Loading semantics
 

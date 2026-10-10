@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "restore-per-project-socrates-orchestrator-entry-point",
-  "title": "Restore per-project Socrates orchestrator entry point",
+  "title": "Restore per-project Socrates task lifecycle and Guards",
   "work_class": "planned",
   "status": "active",
   "tracker": {

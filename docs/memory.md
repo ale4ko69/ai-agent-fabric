@@ -25,9 +25,25 @@ result into durable memory. The acknowledgement record names Socrates as its wri
 the original specialist remains in the structured payload. This gives each later session
 of any Fabric role the relevant project context without exposing it to another project.
 
-The restore path is deliberately read-only: it reconstructs task artifacts, memory
-records, and unacknowledged results. It neither executes a project command nor queries
-a tracker or remote service.
+`memory restore` and `harness resume` are deliberately read-only: they reconstruct
+task artifacts, memory records, and unacknowledged results without executing a project
+command or querying a tracker or remote service. The task-level `restore` command is
+different: it reactivates that task's Socrates session and then returns the same durable
+context; it still does not execute project work.
+
+## Guard failures
+
+Concrete failures are stored separately from generic memory records in
+`guard_failures` and `guard_outcomes`. Only the Socrates protocol may write them. Each
+record carries safe identifiers plus an existing project-relative evidence artifact;
+the detail remains in that artifact. Restoring a task returns these records, including
+the current retry, block, or escalation outcome. Harness signals remain a separate
+identifier-only retrospective input. See [Guards](guards.md).
+
+A Guard failure transaction also creates a pending identifier-only trace event in local
+memory. Delivery to `harness/trace.jsonl` is idempotent and is retried by task restore,
+so an interruption after durable failure persistence cannot silently lose the audit
+event or duplicate it.
 
 ## Schema changes
 

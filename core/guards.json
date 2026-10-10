@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "guards": [
+    {
+      "id": "checkpoint",
+      "taxonomy": "gate-failure",
+      "policy": "block"
+    },
+    {
+      "id": "command",
+      "taxonomy": "command-failure",
+      "policy": "retry-then-escalate"
+    }
+  ]
+}
