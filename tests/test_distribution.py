@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tempfile
 import unittest
 from unittest import mock
@@ -79,6 +80,20 @@ class DistributionLifecycleTest(unittest.TestCase):
             self.assertEqual(rollback_preview["to_release"], "test-a")
             rollback_project(project, home)
             self.assertEqual(project_status(project, home)["release"], "test-a")
+
+    def test_codex_plugin_marketplace_includes_the_trusted_session_start_hook(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "fabric-home"
+
+            install_release(SOURCE_ROOT, home, "test-hook")
+
+            plugin = home / "marketplace" / "plugins" / "agent-fabric"
+            manifest = json.loads((plugin / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            hooks = json.loads((plugin / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["hooks"], "./hooks/hooks.json")
+            self.assertIn("SessionStart", hooks["hooks"])
+            self.assertTrue((plugin / "hooks" / "codex_session_start.py").is_file())
 
     def test_linked_state_directory_is_rejected_without_external_write(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -5,10 +5,17 @@ description: Restore one AI Agent Fabric task from durable local state without r
 
 # Restore a task
 
-First run:
+If the user does not know the task id, first run the picker:
 
 ```bash
-<fabric-launcher> restore <project-root> <task-id> --json
+<fabric-launcher> restore <project-root> --json
+```
+
+It returns every active task with a one-based number, title, id, and work class. Show
+that list and let the user select a number, exact title, or task id. Then run:
+
+```bash
+<fabric-launcher> restore <project-root> <number|exact-title|task-id> --json
 ```
 
 The command resumes that task's project-local Socrates session, then returns task

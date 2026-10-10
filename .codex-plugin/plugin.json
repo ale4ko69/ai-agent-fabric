@@ -1,8 +1,9 @@
 {
   "name": "agent-fabric",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Portable project-scoped task orchestration, Guards, memory, and Harness retrospective skills.",
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Agent Fabric",
     "shortDescription": "Project-local agent workflow and memory",

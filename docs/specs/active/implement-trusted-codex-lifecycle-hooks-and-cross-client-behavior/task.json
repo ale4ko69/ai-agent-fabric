@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "implement-trusted-codex-lifecycle-hooks-and-cross-client-behavior",
+  "title": "Implement trusted Codex lifecycle hooks and cross-client behavior",
+  "work_class": "planned",
+  "status": "active",
+  "tracker": {
+    "provider": "none",
+    "reference": null,
+    "url": null
+  },
+  "workflow": {
+    "schema_version": 1,
+    "spec_revision": 1,
+    "plan_revision": 1
+  }
+}

@@ -43,6 +43,7 @@ MANAGED_BLOCK_PATTERN = re.compile(
 )
 RELEASE_ASSETS = (
     ".codex-plugin",
+    "hooks",
     "README.md",
     "pyproject.toml",
     "src",
@@ -60,6 +61,7 @@ RELEASE_ASSETS = (
     "docs/global-distribution.md",
     "docs/guards.md",
     "docs/harness.md",
+    "docs/using-fabric.md",
     "docs/manifests.md",
     "docs/memory.md",
     "docs/model-routing.md",
@@ -108,7 +110,19 @@ def adapter_manifest(client: str) -> dict[str, Any]:
             "project_overlay": {"path": ".agent-fabric/project-overlay.md", "loader": "global-bootstrap"},
             "delivery": {"default": "managed-block", "supported": ["symlink", "wrapper", "managed-block"]},
             "lifecycle": {"preview": True, "backup": True, "rollback": True, "uninstall": True},
-            "hooks": {"mode": "unsupported", "events": []},
+            "hooks": {
+                "mode": "adapter",
+                "events": ["session-start"],
+                "implementation": {
+                    "client_version": "Codex plugin hooks",
+                    "hook_point": "SessionStart",
+                    "handler": "hooks/codex_session_start.py",
+                    "delivery": "plugin",
+                    "ownership_record": "client-record",
+                    "rollback": True,
+                    "uninstall": True,
+                },
+            },
         },
         "copilot": {
             "schema_version": 3,
@@ -215,7 +229,7 @@ def validate_adapter_manifest(manifest: dict[str, Any]) -> None:
             or set(hooks) != {"mode", "events", "implementation"}
             or set(implementation) != {"client_version", "hook_point", "handler", "delivery", "ownership_record", "rollback", "uninstall"}
             or not all(isinstance(implementation.get(field), str) and implementation[field] for field in ("client_version", "hook_point", "handler"))
-            or implementation.get("delivery") not in {"symlink", "wrapper", "import"}
+            or implementation.get("delivery") not in {"symlink", "wrapper", "import", "plugin"}
             or implementation.get("ownership_record") != "client-record"
             or implementation.get("rollback") is not True
             or implementation.get("uninstall") is not True
@@ -344,6 +358,10 @@ def release_preview(source_root: Path, fabric_home: Path | None = None, version:
     paths.extend(_release_generated_paths(destination))
     paths.extend([destination / RELEASE_MANIFEST_FILE, installation_path(home), home / "bin" / "ai-agent-fabric", home / "bin" / "ai-agent-fabric.py"])
     paths.extend(home / "adapters" / client / "bootstrap.md" for client in SUPPORTED_CLIENTS)
+    paths.extend([
+        home / "marketplace" / "plugins" / "agent-fabric",
+        home / "marketplace" / ".agents" / "plugins" / "marketplace.json",
+    ])
     if installation_path(home).exists():
         paths.append(home / "backups" / "installation-<timestamp>.json")
     return paths
@@ -1808,7 +1826,7 @@ def _write_global_skills(fabric_home: Path, release: Path) -> None:
 
 
 def _write_global_codex_marketplace(fabric_home: Path, release: str) -> None:
-    """Materialize a local skills-only Codex marketplace with a readable source name."""
+    """Materialize the Fabric-owned Codex plugin marketplace source."""
     root = fabric_home / "marketplace"
     plugin = root / "plugins" / "agent-fabric"
     skills = plugin / "skills"
@@ -1819,11 +1837,16 @@ def _write_global_codex_marketplace(fabric_home: Path, release: str) -> None:
             shutil.rmtree(plugin)
     skills.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(fabric_home / "skills", skills)
+    release_hooks = fabric_home / "releases" / release / "hooks"
+    if not (release_hooks / "hooks.json").is_file():
+        raise ValueError(f"Release is missing the Codex hook configuration: {release_hooks}")
+    shutil.copytree(release_hooks, plugin / "hooks")
     manifest = {
         "name": "agent-fabric",
         "version": release,
         "description": "Portable project-scoped agent workflow, memory, task routing, and Harness retrospective skills.",
         "skills": "./skills/",
+        "hooks": "./hooks/hooks.json",
         "interface": {
             "displayName": "Agent Fabric",
             "shortDescription": "Project-local agent workflow and memory",

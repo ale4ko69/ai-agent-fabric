@@ -24,14 +24,17 @@ from taking ownership of a pre-existing client file.
 
 ## Hooks and model routing
 
-The common Fabric protocol can use lifecycle events for safe Harness signals, context
-restore, and checkpoints, but a hook belongs to a concrete client adapter—not to a
-generic model or the global Fabric. Each adapter manifest explicitly says whether this
-Fabric adapter has an installed hook implementation (`adapter`) or not (`unsupported`).
-`unsupported` does not assert that the vendor client lacks hooks; it only prevents
-Fabric from claiming an uninstalled handler. The initial adapters ship with no Fabric
-hook handler until a concrete implementation, delivery, client-version, host strategy,
-and reversible lifecycle are reviewed. See [client-adapter evidence](client-adapter-evidence.md).
+The common Fabric protocol can use lifecycle events, but a hook belongs to a concrete
+client adapter—not to a generic model or the global Fabric. The Codex adapter ships a
+plugin-owned, read-only `SessionStart` hook. It reads only the bound project path and
+the launcher-provided active-task metadata, then returns task-selection context. It
+does not read chat text, start/restore work, or record a Guard or Harness signal.
+
+The Copilot and Claude adapter manifests remain `unsupported`: that means this Fabric
+release has no installed handler for those adapters, not that the vendors have no hook
+API. Codex Cloud orchestration does not execute this local/plugin command hook.
+See [client-adapter evidence](client-adapter-evidence.md) and the operator explanation
+in [Using Fabric](using-fabric.md).
 
 The selected project model-routing configuration chooses affordable models per role.
 It may affect what work an agent performs, but it cannot create a hook, expose a

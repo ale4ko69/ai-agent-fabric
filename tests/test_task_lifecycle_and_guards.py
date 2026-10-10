@@ -2,13 +2,15 @@ from pathlib import Path
 from contextlib import redirect_stdout
 import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 
 from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
-from ai_agent_fabric.entrypoints import restore_task, start_task
+from ai_agent_fabric.entrypoints import restore_picker, restore_task, start_task
 from ai_agent_fabric.harness import record_checkpoint
 from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, transition_step
 
@@ -41,6 +43,40 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             [record["kind"] for record in restored["memory"]["records"]],
             ["task-started", "task-restored"],
         )
+
+    def test_restore_picker_lists_tasks_and_resolves_number_title_or_id(self) -> None:
+        start_task(self.project, "First task", "small-bug", "first-task")
+        start_task(self.project, "Second task", "small-bug", "second-task")
+
+        picker = restore_picker(self.project)
+
+        self.assertEqual([item["number"] for item in picker["tasks"]], [1, 2])
+        self.assertEqual(restore_picker(self.project, "2")["task_id"], "second-task")
+        self.assertEqual(restore_picker(self.project, "First task")["task_id"], "first-task")
+        self.assertEqual(restore_picker(self.project, "second-task")["task_id"], "second-task")
+
+    def test_codex_session_start_hook_is_read_only_and_returns_active_task_data(self) -> None:
+        start_task(self.project, "Hook task", "small-bug", "hook-task")
+        hook = SOURCE_ROOT / "hooks" / "codex_session_start.py"
+        environment = os.environ.copy()
+        environment["AI_AGENT_FABRIC_HOME"] = str(self.home)
+
+        result = subprocess.run(
+            [sys.executable, str(hook)],
+            input=json.dumps({"cwd": str(self.project)}),
+            capture_output=True,
+            text=True,
+            check=True,
+            env=environment,
+        )
+
+        payload = json.loads(result.stdout)
+        context = payload["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "SessionStart")
+        self.assertIn("hook-task", context)
+        self.assertIn("Hook task", context)
+        restored = restore_task(self.project, "hook-task")
+        self.assertEqual([record["kind"] for record in restored["memory"]["records"]], ["task-started", "task-restored"])
 
     def test_guard_failure_is_durable_idempotent_and_distinct_from_harness_signals(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")

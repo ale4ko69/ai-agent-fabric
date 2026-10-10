@@ -90,6 +90,28 @@ def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:
     return snapshot
 
 
+def restore_picker(project_root: Path, selection: str | None = None) -> dict[str, Any]:
+    """Resolve a human-friendly task selection before any restore mutation occurs."""
+    tasks = _active_tasks(project_root.resolve())
+    choices = [{"number": index, **task} for index, task in enumerate(tasks, start=1)]
+    if selection is None:
+        return {
+            "route": "select-task" if choices else "start",
+            "tasks": choices,
+            "selection_help": "Choose a number, exact title, or task id; restore has not run yet.",
+        }
+    selected = next((task for task in tasks if task["id"] == selection), None)
+    if selected is None and selection.isdecimal():
+        position = int(selection)
+        if 1 <= position <= len(tasks):
+            selected = tasks[position - 1]
+    if selected is None:
+        selected = next((task for task in tasks if task["title"].casefold() == selection.casefold()), None)
+    if selected is None:
+        raise ValueError("Task selection does not match an active task; run restore without a selection to view the list")
+    return {"route": "restore", "task_id": selected["id"], "selected": selected}
+
+
 def _ensure_memory(project_root: Path) -> None:
     """Initialize only absent task memory; existing schemas require explicit migration."""
     if database_path(project_root).is_file():

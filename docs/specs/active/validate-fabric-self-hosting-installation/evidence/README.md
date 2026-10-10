@@ -40,4 +40,13 @@ from public evidence.
 
 - Copilot and Claude instruction files were not altered.
 - Native slash-command discovery was not claimed or verified.
-- The isolated repository suite passed with 19 tests and one host-capability skip.
+- The current source validation suite passed 34 tests and one host-capability skip.
+
+## Release-validation boundary
+
+The source now contains a new immutable release (`0.1.13`) with a trusted Codex plugin
+`SessionStart` hook. It has not been installed yet: release installation and binding
+update occur only after the completed branch is merged to `main`, as required for a
+self-hosting release. The source `restore` picker correctly listed every active task;
+selecting a task against the older `0.1.11` binding stopped with the explicit memory
+migration requirement rather than mutating state outside an approved project update.

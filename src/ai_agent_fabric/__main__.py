@@ -14,7 +14,7 @@ from .environment import detect_environment
 from .memory import acknowledge_result, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
 from .task_specs import approve_planned_task, approval_preview, archive_task, create_task, implementation_readiness, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
-from .entrypoints import restore_task, start_preview, start_task, work_router
+from .entrypoints import restore_picker, restore_task, start_preview, start_task, work_router
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
 from .socrates import record_guard_failure, record_harness_signal, transition_step
 
@@ -45,7 +45,7 @@ def main() -> None:
     start.add_argument("--json", action="store_true")
     restore = sub.add_parser("restore", help="Resume one bound task's Socrates lifecycle without running project commands")
     restore.add_argument("target", type=Path)
-    restore.add_argument("task_id")
+    restore.add_argument("task_id", nargs="?", help="Task id, exact title, or one-based number from the restore task list")
     restore.add_argument("--home", type=Path, default=default_fabric_home())
     restore.add_argument("--json", action="store_true")
     memory = sub.add_parser("memory", help="Manage a target repository's local memory")
@@ -276,7 +276,8 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "restore":
         require_bound_project(args.target, args.home)
-        result = restore_task(args.target, args.task_id)
+        picker = restore_picker(args.target, args.task_id)
+        result = restore_task(args.target, picker["task_id"]) if picker["route"] == "restore" else picker
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "memory" and args.memory_command == "init":
         # A release update journals its pending state before invoking the selected

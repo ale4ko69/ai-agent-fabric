@@ -208,7 +208,14 @@ Loading differs by client: Codex uses ordered global-then-repository instruction
 Copilot combines applicable instruction files, and Claude treats applicable `CLAUDE.md`
 layers as additive. Fabric's managed block is installed, backed up, rolled back, and
 uninstalled only through the selected adapter lifecycle; it never replaces a user-owned
-instruction file. Current baseline adapters declare no automatic lifecycle hook.
+instruction file. The Codex plugin includes a trusted, read-only `SessionStart` hook:
+after the user reviews and trusts its hash, it supplies the numbered local task list to
+the session. It never reads conversation text, starts work, or writes a signal. Copilot
+and cloud behavior are explicitly bounded in [client-adapter evidence](docs/client-adapter-evidence.md).
+
+Read [Using Fabric in a project](docs/using-fabric.md) before the first task. It shows
+the task-picker, restore packet, Guard decisions, Harness signals, and the boundary
+between a source branch, an installed release, and a project's binding.
 
 ## Commands and entry points
 
@@ -220,7 +227,7 @@ these command groups:
 | Inspect a project | `project status <project> --json` | Read-only binding and release status. |
 | Enter work | `work <project> [task-id] --json` | Read-only router: restores one task, starts intake, or asks for a task choice. |
 | Start a task | `start <project> --title "..." --type planned --json` | Preview by default; `--apply` creates the package and starts that task's project-local Socrates lifecycle. |
-| Restore task context | `restore <project> <task-id> --json` | Resumes that task's Socrates session, then returns task metadata, artifacts, memory, failures, and pending delegation state. |
+| Choose or restore task context | `restore <project> [number\|title\|task-id] --json` | Without a selection, shows numbered active tasks. A number, exact title, or id restores the selected task. |
 | Process a concrete failure | `guards failure <project> ... --json` | Records Socrates-owned failure and Guard outcome from an existing evidence artifact; returns retry, block, or escalation. |
 | Advance task checklist | `socrates step <project> ... --json` | Socrates-only ordered step transition; completed steps cannot be restarted by restore. |
 | Inspect the host | `detect --json` | Read-only capability report. |
@@ -289,6 +296,14 @@ the first unfinished safe step, and waits for the applicable workflow direction.
 
 `restore` refuses to invent a new empty memory database for an existing task package.
 That missing-state condition is surfaced for recovery instead of restarting completed work.
+
+### Choosing a task when you do not remember its identifier
+
+Use `restore <project> --json` when you do not remember the task. It performs no
+restore yet and returns a numbered list of every active task. Supply the displayed
+number, exact title, or task id to restore it. `work <project> --json` remains the
+read-only router used by the skill before work begins; it also reports whether the
+next path is start, restore, or task selection.
 
 ## Delegation and the lifecycle
 

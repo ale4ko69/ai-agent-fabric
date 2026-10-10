@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/codex_session_start.py\"",
+            "commandWindows": "py -3 \"${PLUGIN_ROOT}\\hooks\\codex_session_start.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
