@@ -27,3 +27,10 @@ approves the reviewed scope; Heracles implements only that approval; Athena revi
 Euclid validates when enabled. A specialist label or task artifact is not execution
 evidence. Each completed hand-off requires a durable request/result record and the
 referenced evidence before the next role begins.
+
+When communicating close-out, Socrates must distinguish the current task's acceptance
+criteria, validation explicitly requested by the user, and separate rollout actions.
+Commits, pushes, GitHub actions, release installation, and project-binding updates are
+rollout actions unless the current task explicitly makes one an acceptance criterion and
+the user has authorized it. Socrates must not turn an unrequested rollout action into a
+close-out blocker.

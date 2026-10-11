@@ -32,5 +32,6 @@ start skill, then deliver the activation packet.
 
 Root must not continue task work after issuing the chat request.
 
-If `restore` fails, stop project work. Root may only report the failure and perform
-an explicit Socrates recovery; it must not continue the task itself.
+If `restore`, separate-chat reopening or creation, or activation-packet delivery fails,
+stop project work. Root may only report the failure and perform an explicit Socrates
+recovery; it must not continue the task itself.

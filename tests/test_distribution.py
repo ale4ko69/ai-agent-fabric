@@ -116,6 +116,18 @@ class DistributionLifecycleTest(unittest.TestCase):
             self.assertIn("SessionStart", hooks["hooks"])
             self.assertTrue((plugin / "hooks" / "codex_session_start.py").is_file())
 
+    def test_generated_codex_bootstrap_requires_a_separate_socrates_chat_and_recovery_only_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "fabric-home"
+
+            release = install_release(SOURCE_ROOT, home, "test-codex-handoff")
+            bootstrap = (release / "adapters" / "codex" / "bootstrap.md").read_text(encoding="utf-8")
+
+            self.assertIn("socrates_chat_request", bootstrap)
+            self.assertIn("create or reopen the named separate Socrates chat", bootstrap)
+            self.assertIn("Root must not present itself as Socrates", bootstrap)
+            self.assertIn("chat creation, or activation-packet delivery fails", bootstrap)
+
     def test_linked_state_directory_is_rejected_without_external_write(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

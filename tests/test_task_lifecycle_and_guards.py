@@ -41,6 +41,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(request["action"], "create-separate-socrates-chat")
         self.assertNotIn("socrates_handoff", result)
         restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["socrates_chat_request"], request)
         self.assertEqual(restored["socrates_chat_request"]["task_id"], "example-task")
         self.assertEqual(restored["memory"]["session"]["id"], "example-task")
         self.assertEqual(restored["memory"]["session"]["status"], "awaiting-socrates-chat")
