@@ -12,7 +12,7 @@ from .project_state import state_path
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
 CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"}
-MEMORY_SCHEMA_VERSION = 9
+MEMORY_SCHEMA_VERSION = 10
 SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 SAFE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
 SECRET_VALUE_PATTERNS = (
@@ -147,6 +147,7 @@ def connect(project_root: Path, *, create: bool = True) -> sqlite3.Connection:
 def initialize(project_root: Path) -> Path:
     connection = connect(project_root)
     try:
+        prior_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         connection.executescript(SCHEMA)
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(result_outbox)")}
         if "request_id" not in columns:
@@ -172,6 +173,19 @@ def initialize(project_root: Path) -> Path:
         )
         connection.execute("DELETE FROM result_outbox WHERE request_id IS NULL")
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS result_outbox_request_id ON result_outbox(request_id) WHERE request_id IS NOT NULL")
+        if prior_version < 10:
+            connection.execute(
+                "INSERT OR IGNORE INTO socrates_chats(session_id, status) "
+                "SELECT id, 'awaiting-claim' FROM sessions WHERE status='active'"
+            )
+            connection.execute(
+                "UPDATE sessions SET status='awaiting-socrates-chat', updated_at=CURRENT_TIMESTAMP "
+                "WHERE status='active' AND id IN (SELECT session_id FROM socrates_chats WHERE status='awaiting-claim')"
+            )
+            connection.execute(
+                "UPDATE task_lifecycles SET next_action='awaiting-socrates-chat' "
+                "WHERE session_id IN (SELECT session_id FROM socrates_chats WHERE status='awaiting-claim')"
+            )
         connection.execute(f"PRAGMA user_version={MEMORY_SCHEMA_VERSION}")
         connection.commit()
     finally:

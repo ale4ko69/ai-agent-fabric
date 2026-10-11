@@ -13,7 +13,7 @@ from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
 from ai_agent_fabric.entrypoints import recover_unicode_package, restore_picker, restore_task, start_task
 from ai_agent_fabric.harness import flush_guard_traces, record_checkpoint
-from ai_agent_fabric.memory import claim_socrates_chat
+from ai_agent_fabric.memory import claim_socrates_chat, initialize
 from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, transition_step
 
 
@@ -60,6 +60,25 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         claimed_restore = restore_task(self.project, "example-task")
         self.assertEqual(claimed_restore["memory"]["session"]["status"], "active")
         self.assertEqual(claimed_restore["memory"]["socrates_chat"]["thread_id"], "socrates-example-task")
+
+    def test_memory_migration_prepares_a_claim_for_an_existing_active_task(self) -> None:
+        import sqlite3
+
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            connection.execute("DELETE FROM socrates_chats WHERE session_id='example-task'")
+            connection.execute("UPDATE sessions SET status='active' WHERE id='example-task'")
+            connection.execute("PRAGMA user_version=9")
+            connection.commit()
+        finally:
+            connection.close()
+
+        initialize(self.project)
+
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["session"]["status"], "awaiting-socrates-chat")
+        self.assertEqual(restored["memory"]["socrates_chat"]["status"], "awaiting-claim")
 
     def test_russian_start_has_one_ascii_package_session_and_lifecycle(self) -> None:
         result = start_task(self.project, "Проверить и упорядочить каталог компонентов", "small-bug")
