@@ -104,6 +104,21 @@ The binding is the only durable relationship between a repository and the centra
 Fabric. `profile.json`, `memory.db`, `docs/specs/`, and client-local project wrappers
 remain in the repository.
 
+### Version-control policy for project state
+
+Git tracks files, not empty directories. A bound project's reproducible Fabric
+configuration is therefore committed with that project: `.agent-fabric/fabric-binding.json`,
+`.agent-fabric/profile.json`, `.agent-fabric/project-overlay.md`, and declared
+configuration under `.agent-fabric/config/`. Durable task packages and their review
+evidence under `docs/specs/` are also project source material and are committed.
+
+Local operational state is not committed: `.agent-fabric/memory.db` and its SQLite
+sidecars, `.agent-fabric/harness/`, and `.agent-fabric/backups/`. These files contain
+machine-local runtime history, retrospective traces, or recoverable update copies;
+they are excluded by the repository's `.gitignore`. Initializing or updating a project
+may create both categories, but only the reproducible configuration and task artifacts
+belong in version control.
+
 ## Installation modes
 
 | Mode | Purpose | Writes |
