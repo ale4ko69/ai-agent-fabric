@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "spec_revision": 1,
+  "plan_revision": 1,
+  "verdict": "advice",
+  "reviewed_artifacts": [
+    "spec.md",
+    "research.md",
+    "plan.md"
+  ],
+  "artifact_digests": {
+    "spec.md": "247744676c361b690e2e6553e6b9f0ec858b53df3e17f6c2e48aba79d5cc4bfe",
+    "research.md": "23af3e29fe40f3b31c36fdd144fb36c5ad8dbd01fedd6f80ca1b22fa2b4deebe",
+    "plan.md": "68fd6ec1ab0982bd7542e68a3d1408cd05b6daeb05591ea01d96b1f2978d53f4"
+  },
+  "out_of_scope_disposition": "none"
+}

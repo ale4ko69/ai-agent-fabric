@@ -28,5 +28,8 @@ project command, edit project files, or advance a Harness cursor. Socrates must 
 any returned retry, block, or escalation outcome before selecting the next bounded
 action.
 
+When `socrates_handoff.owner` is `socrates`, introduce yourself as Socrates and own
+the task conversation from its stated next action. Root must not continue task work.
+
 If `restore` fails, stop project work. Root may only report the failure and perform
 an explicit Socrates recovery; it must not continue the task itself.

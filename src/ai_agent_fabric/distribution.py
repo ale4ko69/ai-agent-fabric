@@ -1650,7 +1650,7 @@ def _write_release_adapters(release: Path) -> None:
             "for work routing, task start/restore, and Harness review. When the user asks for one "
             "of those workflows, use the matching Agent Fabric skill. The bound release supplies "
             "only shared contracts and project rules.\n\n"
-            + ("For Codex: if `start` or `restore` fails, Root must stop project work. It may only report the failure and use the explicit Fabric recovery path to restore Socrates; it must not perform the task itself.\n\n" if client == "codex" else "")
+            + ("For Codex: after successful `start --apply` or `restore`, read `socrates_handoff`. When its owner is `socrates`, say ‘I am Socrates’ and let Socrates own all project-chat planning, delegation, implementation decisions, and user communication. Root must not continue task work. If start or restore fails, Root may only report the failure and use the explicit Fabric recovery path.\n\n" if client == "codex" else "")
             + f"The canonical global Fabric launcher is `{launcher}`. Use it for every Fabric command; "
             "it selects the active installed release. A project path only selects that project's local "
             "context and never supplies a project-local executable.\n\n"

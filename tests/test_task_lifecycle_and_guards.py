@@ -37,8 +37,11 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
 
         self.assertEqual(result["socrates"]["lifecycle"], "started")
         self.assertEqual(result["socrates"]["next_action"], "intake")
+        self.assertEqual(result["socrates_handoff"]["owner"], "socrates")
+        self.assertIn("I am Socrates", result["socrates_handoff"]["visible_intro"])
         restored = restore_task(self.project, "example-task")
         self.assertEqual(restored["socrates"]["lifecycle"], "resumed")
+        self.assertEqual(restored["socrates_handoff"]["owner"], "socrates")
         self.assertEqual(restored["memory"]["session"]["id"], "example-task")
         self.assertEqual(
             [record["kind"] for record in restored["memory"]["records"]],
@@ -90,6 +93,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(restore_picker(self.project, "2")["task_id"], "second-task")
         self.assertEqual(restore_picker(self.project, "First task")["task_id"], "first-task")
         self.assertEqual(restore_picker(self.project, "second-task")["task_id"], "second-task")
+        self.assertNotIn("socrates_handoff", picker)
 
     def test_codex_session_start_hook_is_read_only_and_returns_active_task_data(self) -> None:
         start_task(self.project, "Hook task", "small-bug", "hook-task")

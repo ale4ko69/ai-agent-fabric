@@ -62,7 +62,8 @@ def start_task(project_root: Path, title: str, work_class: str, task_id: str | N
         shutil.rmtree(package, ignore_errors=True)
         raise
     flush_guard_traces(root)
-    return {"package": str(package), "task_id": stable_id, "socrates": {"lifecycle": "started", **lifecycle}}
+    socrates = {"lifecycle": "started", **lifecycle}
+    return {"package": str(package), "task_id": stable_id, "socrates": socrates, "socrates_handoff": _socrates_handoff(stable_id, title, socrates)}
 
 
 def recover_unicode_package(project_root: Path, source_name: str, task_id: str | None = None, *, apply: bool = False) -> dict[str, str]:
@@ -124,7 +125,22 @@ def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:
     flush_guard_traces(root)
     snapshot = resume_snapshot(root, metadata["id"])
     snapshot["socrates"] = {"lifecycle": "resumed", **lifecycle}
+    snapshot["socrates_handoff"] = _socrates_handoff(metadata["id"], metadata["title"], snapshot["socrates"])
     return snapshot
+
+
+def _socrates_handoff(task_id: str, title: str, lifecycle: dict[str, Any]) -> dict[str, Any]:
+    """Adapter-facing ownership boundary after a successful task lifecycle operation."""
+    return {
+        "owner": "socrates",
+        "task_id": task_id,
+        "title": title,
+        "lifecycle": lifecycle["lifecycle"],
+        "next_action": lifecycle["next_action"],
+        "visible_intro": f"I am Socrates, the orchestrator for {title}. The next safe action is {lifecycle['next_action']}.",
+        "root_limit": "Root must not plan, delegate, implement, or mutate this task after this handoff; it may only report a failure and run explicit Socrates recovery.",
+        "recovery_command": f"restore <project-root> {task_id} --json",
+    }
 
 
 def restore_picker(project_root: Path, selection: str | None = None) -> dict[str, Any]:

@@ -23,6 +23,10 @@ the user explicitly confirms that preview:
 session**. It does not start a global/root orchestrator. Socrates now owns the task's
 delegation, durable memory, Guard failures, Harness signals, and next safe action.
 
+When `created.socrates_handoff.owner` is `socrates`, introduce yourself to the user
+as Socrates (for example, “I am Socrates, the orchestrator for this task”) and follow
+the packet's next action. Root must not continue the task after this handoff.
+
 If `start` fails, stop project work. Report the failure and use only the explicit
 Fabric recovery path when applicable; Root must not implement the requested task.
 

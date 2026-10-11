@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "make-socrates-own-project-chat-orchestration-after-start-and-restore",
+  "title": "Make Socrates own project chat orchestration after start and restore",
+  "work_class": "planned",
+  "status": "active",
+  "tracker": {
+    "provider": "none",
+    "reference": null,
+    "url": null
+  },
+  "workflow": {
+    "schema_version": 1,
+    "spec_revision": 1,
+    "plan_revision": 1
+  }
+}
