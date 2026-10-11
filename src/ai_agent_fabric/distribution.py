@@ -1964,19 +1964,11 @@ def _migrate_project_memory(project: Path, fabric_home: Path, release: str) -> N
         raise ValueError("Project memory is newer than the selected release and cannot be downgraded")
     if current_version == target_version:
         return
-    launcher = release_path(fabric_home, release) / "bin" / "ai-agent-fabric"
-    if not launcher.is_file():
-        raise ValueError(f"Selected release has no launcher: {launcher}")
-    environment = os.environ.copy()
-    environment["AI_AGENT_FABRIC_HOME"] = str(fabric_home)
-    release_source = str(release_path(fabric_home, release) / "src")
-    environment["PYTHONPATH"] = release_source + (os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else "")
-    subprocess.run(
-        [sys.executable, "-B", "-m", "ai_agent_fabric", "memory", "init", str(project), "--home", str(fabric_home)],
-        check=True,
-        env=environment,
-        stdout=subprocess.DEVNULL,
-    )
+    # This function runs from the selected, manifest-validated release.  Calling
+    # the CLI here would re-check the *old* project binding and therefore make a
+    # damaged current release impossible to repair.  Migrate the local database
+    # directly instead; the pending-update journal preserves recoverability.
+    initialize(project)
     if schema_version(project) != target_version:
         raise ValueError("Selected release did not produce its declared memory schema version")
 

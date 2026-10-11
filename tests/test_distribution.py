@@ -102,6 +102,25 @@ class DistributionLifecycleTest(unittest.TestCase):
             rollback_project(project, home)
             self.assertEqual(project_status(project, home)["release"], "test-a")
 
+    def test_update_repairs_a_project_pinned_to_a_damaged_current_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "fabric-home"
+            project = root / "project"
+            project.mkdir()
+            release_a = install_release(SOURCE_ROOT, home, "test-a")
+            bind_project(project, "test-a", "codex", home)
+            install_release(SOURCE_ROOT, home, "test-b")
+
+            (release_a / "unexpected.pyc").write_text("damaged", encoding="utf-8")
+            self.assertEqual(project_status(project, home)["error"], "Fabric release file set does not match its manifest")
+
+            update_project(project, "test-b", home)
+
+            current = project_status(project, home)
+            self.assertEqual(current["status"], "bound")
+            self.assertEqual(current["release"], "test-b")
+
     def test_codex_plugin_marketplace_includes_the_trusted_session_start_hook(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
