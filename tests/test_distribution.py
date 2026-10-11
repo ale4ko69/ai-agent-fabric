@@ -128,6 +128,8 @@ class DistributionLifecycleTest(unittest.TestCase):
             self.assertIn("Root must not present itself as Socrates", bootstrap)
             self.assertIn("chat creation, or activation-packet delivery fails", bootstrap)
             self.assertIn("Do not make an unrequested rollout action a close-out blocker", bootstrap)
+            stable_bootstrap = (home / "adapters" / "codex" / "bootstrap.md").read_text(encoding="utf-8")
+            self.assertEqual(stable_bootstrap, bootstrap)
 
     def test_linked_state_directory_is_rejected_without_external_write(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
