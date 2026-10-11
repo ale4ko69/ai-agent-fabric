@@ -18,18 +18,19 @@ that list and let the user select a number, exact title, or task id. Then run:
 <fabric-launcher> restore <project-root> <number|exact-title|task-id> --json
 ```
 
-The command resumes that task's project-local Socrates session, then returns task
-metadata, local artifacts, memory snapshot, Guard failures/outcomes, pending delegation
-requests, pending results, and the durable checklist. Treat completed artifacts as closed evidence; do not
-recreate them or restart the task from the beginning.
+The command returns task metadata, local artifacts, memory snapshot, Guard failures/outcomes,
+pending delegation requests, pending results, the durable checklist, and a
+`socrates_chat_request`. It never lets Root resume or impersonate Socrates.
 
-Restoration may reactivate Socrates' durable session record, but it does not execute a
-project command, edit project files, or advance a Harness cursor. Socrates must inspect
-any returned retry, block, or escalation outcome before selecting the next bounded
-action.
+Root opens or returns the user to the named separate Socrates chat. That chat claims its
+thread id with the returned activation command, then inspects the durable state before
+selecting the next bounded action.
 
-When `socrates_handoff.owner` is `socrates`, introduce yourself as Socrates and own
-the task conversation from its stated next action. Root must not continue task work.
+When `memory.socrates_chat.thread_id` is present, reopen that exact Codex chat; do not
+create a replacement. When it is absent, create the Socrates chat as described by the
+start skill, then deliver the activation packet.
+
+Root must not continue task work after issuing the chat request.
 
 If `restore` fails, stop project work. Root may only report the failure and perform
 an explicit Socrates recovery; it must not continue the task itself.

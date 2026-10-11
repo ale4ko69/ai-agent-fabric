@@ -11,7 +11,7 @@ from .capabilities import load_capabilities, unmet_requirements
 from .bootstrap import bash_install_plan, install_bash
 from .installer import load_project_profile, resolve_project_command
 from .environment import detect_environment
-from .memory import acknowledge_result, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
+from .memory import acknowledge_result, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
 from .task_specs import approve_planned_task, approval_preview, archive_task, create_task, implementation_readiness, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
 from .entrypoints import recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
@@ -40,7 +40,7 @@ def main() -> None:
     work.add_argument("selector", nargs="?")
     work.add_argument("--home", type=Path, default=default_fabric_home())
     work.add_argument("--json", action="store_true")
-    start = sub.add_parser("start", help="Preview or explicitly create one project-local task package and start Socrates")
+    start = sub.add_parser("start", help="Preview or explicitly create one task package and request a separate Socrates chat")
     start.add_argument("target", type=Path)
     start.add_argument("--title", required=True)
     start.add_argument("--type", dest="work_class", required=True, choices=("small-bug", "planned"))
@@ -106,6 +106,12 @@ def main() -> None:
     socrates_step.add_argument("--closure-reason", help="Non-secret reason required for done or skipped")
     socrates_step.add_argument("--home", type=Path, default=default_fabric_home())
     socrates_step.add_argument("--json", action="store_true")
+    socrates_claim = socrates_sub.add_parser("claim", help="Bind and activate one separate Socrates chat for a prepared task")
+    socrates_claim.add_argument("target", type=Path)
+    socrates_claim.add_argument("--session", required=True)
+    socrates_claim.add_argument("--thread-id", required=True)
+    socrates_claim.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_claim.add_argument("--json", action="store_true")
     socrates_signal = socrates_sub.add_parser("signal", help="Record one Socrates-owned Harness signal")
     socrates_signal.add_argument("target", type=Path)
     socrates_signal.add_argument("--category", required=True, choices=("user-correction", "agent-drift", "missed-instruction", "scope-violation", "memory-gap", "repeated-failure", "security-concern", "friction"))
@@ -333,6 +339,11 @@ def main() -> None:
     elif args.command == "socrates" and args.socrates_command == "step":
         require_bound_project(args.target, args.home)
         result = transition_step(args.target.resolve(), args.session, args.step, args.status, args.closure_artifact, args.closure_reason)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "claim":
+        require_bound_project(args.target, args.home)
+        result = claim_socrates_chat(args.target.resolve(), args.session, args.thread_id)
+        flush_guard_traces(args.target)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "socrates" and args.socrates_command == "signal":
         require_bound_project(args.target, args.home)

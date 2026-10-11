@@ -12,7 +12,8 @@ from unittest import mock
 from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
 from ai_agent_fabric.entrypoints import recover_unicode_package, restore_picker, restore_task, start_task
-from ai_agent_fabric.harness import record_checkpoint
+from ai_agent_fabric.harness import flush_guard_traces, record_checkpoint
+from ai_agent_fabric.memory import claim_socrates_chat
 from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, transition_step
 
 
@@ -32,21 +33,33 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.directory.cleanup()
 
-    def test_start_creates_task_and_starts_project_socrates(self) -> None:
+    def test_start_requires_a_separate_socrates_chat_claim(self) -> None:
         result = start_task(self.project, "Example task", "small-bug", "example-task")
 
-        self.assertEqual(result["socrates"]["lifecycle"], "started")
-        self.assertEqual(result["socrates"]["next_action"], "intake")
-        self.assertEqual(result["socrates_handoff"]["owner"], "socrates")
-        self.assertIn("I am Socrates", result["socrates_handoff"]["visible_intro"])
+        request = result["socrates_chat_request"]
+        self.assertEqual(request["owner"], "root")
+        self.assertEqual(request["action"], "create-separate-socrates-chat")
+        self.assertNotIn("socrates_handoff", result)
         restored = restore_task(self.project, "example-task")
-        self.assertEqual(restored["socrates"]["lifecycle"], "resumed")
-        self.assertEqual(restored["socrates_handoff"]["owner"], "socrates")
+        self.assertEqual(restored["socrates_chat_request"]["task_id"], "example-task")
         self.assertEqual(restored["memory"]["session"]["id"], "example-task")
+        self.assertEqual(restored["memory"]["session"]["status"], "awaiting-socrates-chat")
         self.assertEqual(
             [record["kind"] for record in restored["memory"]["records"]],
-            ["task-started", "task-restored"],
+            ["task-started"],
         )
+        with self.assertRaisesRegex(PermissionError, "claimed separate Socrates chat"):
+            transition_step(self.project, "example-task", "intake", "in-progress")
+        claimed = claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        self.assertEqual(claimed["next_action"], "intake")
+        self.assertEqual(claimed["thread_id"], "socrates-example-task")
+        self.assertEqual(
+            claim_socrates_chat(self.project, "example-task", "socrates-example-task"),
+            claimed,
+        )
+        claimed_restore = restore_task(self.project, "example-task")
+        self.assertEqual(claimed_restore["memory"]["session"]["status"], "active")
+        self.assertEqual(claimed_restore["memory"]["socrates_chat"]["thread_id"], "socrates-example-task")
 
     def test_russian_start_has_one_ascii_package_session_and_lifecycle(self) -> None:
         result = start_task(self.project, "Проверить и упорядочить каталог компонентов", "small-bug")
@@ -116,7 +129,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertIn("hook-task", context)
         self.assertIn("Hook task", context)
         restored = restore_task(self.project, "hook-task")
-        self.assertEqual([record["kind"] for record in restored["memory"]["records"]], ["task-started", "task-restored"])
+        self.assertEqual([record["kind"] for record in restored["memory"]["records"]], ["task-started"])
 
     def test_guard_failure_is_durable_idempotent_and_distinct_from_harness_signals(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
@@ -264,13 +277,16 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertFalse(trace.exists())
 
         restore_task(self.project, "example-task")
-        restore_task(self.project, "example-task")
+        self.assertFalse(trace.exists(), "Root restore must not run Socrates recovery work")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        flush_guard_traces(self.project)
 
         events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
         self.assertEqual([event["idempotency_key"] for event in events], ["pending-trace-1"])
 
     def test_failed_checkpoint_records_the_declared_checkpoint_guard(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
         artifact = self.project / "docs/specs/active/example-task/evidence/checkpoint.md"
         artifact.write_text("# Failed checkpoint evidence\n", encoding="utf-8")
         output = io.StringIO()
@@ -311,6 +327,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
 
     def test_socrates_transition_restores_completed_checklist_without_restart(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
         evidence = self.project / "docs/specs/active/example-task/evidence/intake.md"
         evidence.write_text("# Intake complete\n", encoding="utf-8")
         transition_step(self.project, "example-task", "intake", "in-progress")
@@ -321,7 +338,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
 
         restored = restore_task(self.project, "example-task")
 
-        self.assertEqual(restored["socrates"]["next_action"], "evidence")
+        self.assertEqual(restored["memory"]["lifecycle"]["next_action"], "evidence")
         self.assertEqual(
             restored["memory"]["steps"][0],
             {"step_id": "intake", "status": "done", "closure_artifact": "docs/specs/active/example-task/evidence/intake.md", "closure_reason": "intake-evidence-complete"},
@@ -331,6 +348,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
 
     def test_socrates_rejects_closing_a_step_without_evidence_and_reason(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
         with self.assertRaisesRegex(ValueError, "evidence artifact and reason"):
             transition_step(self.project, "example-task", "intake", "done")
 

@@ -104,7 +104,8 @@ remain project-local; a client plugin or bootstrap never makes them global.
 
 ```mermaid
 flowchart TD
-    user["User"] --> socrates["Socrates\nproject orchestrator"]
+    user["User"] --> root["Root\nentry and recovery coordinator"]
+    root --> socrates["Separate Socrates chat\nclaimed project orchestrator"]
     state["Project state\nbinding, profile, task, memory"] --> socrates
     socrates -->|delegates discovery| aristotle["Aristotle\nresearch and dependency evidence"]
     aristotle -->|typed findings| socrates
@@ -125,10 +126,11 @@ flowchart TD
     socrates -->|archives evidence| archive["Task package and archive"]
 ```
 
-This is the target execution contract: Socrates is the only role that writes durable
-project memory or Harness signals; every specialist returns a bounded result to
-Socrates. `start --apply` creates a task package and starts that task's Socrates
-session; `restore` resumes the same project-local session.
+This is the target execution contract: Root creates or reopens the visible Socrates
+chat, then stops task work. Socrates claims the task id and is the only role that
+writes durable project memory or Harness signals; every specialist returns a bounded
+result to Socrates. `start --apply` creates a task package and a pending Socrates chat
+request; `restore` returns its saved chat binding or a request to create it.
 
 ## Install and bind a project
 
@@ -226,8 +228,9 @@ these command groups:
 | --- | --- | --- |
 | Inspect a project | `project status <project> --json` | Read-only binding and release status. |
 | Enter work | `work <project> [task-id] --json` | Read-only router: restores one task, starts intake, or asks for a task choice. |
-| Start a task | `start <project> --title "..." --type planned --json` | Preview by default; `--apply` creates the package and starts that task's project-local Socrates lifecycle. |
+| Start a task | `start <project> --title "..." --type planned --json` | Preview by default; `--apply` creates the package and a pending separate-Socrates-chat claim. |
 | Choose or restore task context | `restore <project> [number\|title\|task-id] --json` | Without a selection, shows numbered active tasks. A number, exact title, or id restores the selected task. |
+| Claim a Socrates chat | `socrates claim <project> --session <task-id> --thread-id <chat-thread-id> --json` | Binds the one separate Socrates chat and activates its lifecycle. |
 | Process a concrete failure | `guards failure <project> ... --json` | Records Socrates-owned failure and Guard outcome from an existing evidence artifact; returns retry, block, or escalation. |
 | Advance task checklist | `socrates step <project> ... --json` | Socrates-only ordered step transition; completed steps cannot be restarted by restore. |
 | Inspect the host | `detect --json` | Read-only capability report. |
@@ -408,9 +411,9 @@ or unsupported rows rather than implied support. See the
 [validation matrix](docs/validation-matrix.md).
 
 The current release defines Socrates as the orchestration role and durable-memory
-writer. `start --apply` now starts the new task's project-local Socrates session, and
-`restore` resumes that task's session. There is no standalone `start orchestrator`
-command.
+writer. `start --apply` prepares a task for a separate Socrates chat; the chat's
+explicit `socrates claim` activates its lifecycle. `restore` reopens the same chat
+when a binding exists. There is no standalone `start orchestrator` command.
 
 ## Development
 

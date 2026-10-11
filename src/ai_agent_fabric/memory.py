@@ -12,7 +12,7 @@ from .project_state import state_path
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
 CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"}
-MEMORY_SCHEMA_VERSION = 8
+MEMORY_SCHEMA_VERSION = 9
 SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 SAFE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
 SECRET_VALUE_PATTERNS = (
@@ -104,6 +104,13 @@ CREATE TABLE IF NOT EXISTS task_lifecycles (
   status TEXT NOT NULL CHECK(status IN ('active', 'blocked', 'escalated')),
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   resumed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS socrates_chats (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  thread_id TEXT UNIQUE,
+  status TEXT NOT NULL CHECK(status IN ('awaiting-claim', 'claimed')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  claimed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS task_steps (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -211,7 +218,7 @@ def quarantined_results(project_root: Path) -> list[dict[str, Any]]:
 
 def _require_current_schema_connection(connection: sqlite3.Connection) -> None:
     tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    required_tables = {"sessions", "records", "delegation_requests", "result_outbox", "guard_failures", "guard_incidents", "guard_outcomes", "task_lifecycles", "task_steps", "guard_trace_outbox"}
+    required_tables = {"sessions", "records", "delegation_requests", "result_outbox", "guard_failures", "guard_incidents", "guard_outcomes", "task_lifecycles", "task_steps", "guard_trace_outbox", "socrates_chats"}
     if not required_tables.issubset(tables):
         raise ValueError("Project memory schema requires migration; run `memory init <project> --home <fabric-home>` explicitly")
     result_columns = {row["name"] for row in connection.execute("PRAGMA table_info(result_outbox)")}
@@ -291,6 +298,57 @@ def activate_task_lifecycle(
         connection.close()
 
 
+def prepare_socrates_chat(project_root: Path, session_id: str) -> None:
+    """Mark a new task as waiting for a separate Socrates chat to claim it."""
+    if not _safe_identifier(session_id):
+        raise ValueError("Socrates chat session id is invalid")
+    connection = connect(project_root, create=False)
+    try:
+        _require_current_schema_connection(connection)
+        with connection:
+            connection.execute(
+                "INSERT INTO socrates_chats(session_id, status) VALUES (?, 'awaiting-claim') "
+                "ON CONFLICT(session_id) DO NOTHING",
+                (session_id,),
+            )
+            connection.execute("UPDATE sessions SET status='awaiting-socrates-chat', updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
+            connection.execute("UPDATE task_lifecycles SET next_action='awaiting-socrates-chat' WHERE session_id=?", (session_id,))
+    finally:
+        connection.close()
+
+
+def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> dict[str, str]:
+    """Bind one visible Socrates chat before it may run the task lifecycle."""
+    if not _safe_identifier(session_id) or not _safe_identifier(thread_id):
+        raise ValueError("Socrates chat identifiers must be safe")
+    connection = connect(project_root, create=False)
+    try:
+        _require_current_schema_connection(connection)
+        with connection:
+            row = connection.execute("SELECT thread_id, status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
+            if row is None:
+                raise KeyError("Task has no pending Socrates chat")
+            if row["status"] == "claimed":
+                if row["thread_id"] != thread_id:
+                    raise ValueError("Task is already claimed by a different Socrates chat")
+                action = _next_task_action(connection, session_id)
+                return {"thread_id": thread_id, **action}
+            connection.execute(
+                "UPDATE socrates_chats SET thread_id=?, status='claimed', claimed_at=COALESCE(claimed_at, CURRENT_TIMESTAMP) WHERE session_id=?",
+                (thread_id, session_id),
+            )
+            connection.execute("UPDATE sessions SET status='active', updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
+            action = _next_task_action(connection, session_id)
+            connection.execute("UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?", (action["next_action"], action["status"], session_id))
+            connection.execute(
+                "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, 'socrates-chat-claimed', 'orchestrator', 'socrates-chat-claimed', ?)",
+                (session_id, json.dumps({"thread_id": thread_id}, ensure_ascii=False, sort_keys=True)),
+            )
+        return {"thread_id": thread_id, **action}
+    finally:
+        connection.close()
+
+
 def _next_task_action(connection: sqlite3.Connection, session_id: str) -> dict[str, str]:
     escalated = connection.execute(
         "SELECT 1 FROM guard_failures WHERE session_id=? AND status='escalated' LIMIT 1", (session_id,)
@@ -330,6 +388,9 @@ def advance_task_step(
     try:
         _require_current_schema_connection(connection)
         with connection:
+            chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
+            if chat is None or chat["status"] != "claimed":
+                raise PermissionError("task steps require a claimed separate Socrates chat")
             row = connection.execute(
                 "SELECT rowid, status FROM task_steps WHERE session_id=? AND step_id=?", (session_id, step_id)
             ).fetchone()
@@ -530,6 +591,9 @@ def restore(project_root: Path, session_id: str) -> dict[str, Any]:
         lifecycle = connection.execute(
             "SELECT task_package, next_action, status, started_at, resumed_at FROM task_lifecycles WHERE session_id=?", (session_id,)
         ).fetchone()
+        socrates_chat = connection.execute(
+            "SELECT thread_id, status, created_at, claimed_at FROM socrates_chats WHERE session_id=?", (session_id,)
+        ).fetchone()
         steps = connection.execute(
             "SELECT step_id, status, closure_artifact, closure_reason FROM task_steps WHERE session_id=? ORDER BY rowid", (session_id,)
         ).fetchall()
@@ -541,6 +605,7 @@ def restore(project_root: Path, session_id: str) -> dict[str, Any]:
         "guard_failures": [dict(row) for row in failures],
         "guard_outcomes": [dict(row) for row in outcomes],
         "lifecycle": dict(lifecycle) if lifecycle is not None else None,
+        "socrates_chat": dict(socrates_chat) if socrates_chat is not None else None,
         "steps": [dict(row) for row in steps],
     }
 

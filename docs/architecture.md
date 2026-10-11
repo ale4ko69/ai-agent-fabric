@@ -56,18 +56,22 @@ in a command argument, or recorded in memory. Bash is required for this operatio
 user task
   -> environment detection (read-only)
   -> project profile + relevant memory recall
-  -> start task / restore task activates project-local Socrates
-  -> orchestrator creates a delegation contract
+  -> Root creates or reopens one separate Socrates chat for the task
+  -> that chat claims the durable task id before lifecycle activation
+  -> Socrates creates a delegation contract
   -> specialist returns a structured result
-  -> orchestrator records result and evidence
+  -> Socrates records result and evidence
   -> gate validates the next state transition
 ```
 
-Only the orchestrator persists task results to the episodic store. Specialists return
-structured data into a durable project-local outbox. The orchestrator acknowledges an
-outbox result in the same database transaction that persists its evidence record and
-updates the session. Unacknowledged results are replayable by idempotency key after an
-interruption; this creates one ordered audit trail without concurrent memory writers.
+Root is only the entry and recovery boundary. It may create or reopen the separate
+Socrates chat and pass its task id, but it cannot claim the task, advance a lifecycle
+step, delegate, or implement task work. Only a claimed Socrates chat persists task
+results to the episodic store. Specialists return structured data into a durable
+project-local outbox. Socrates acknowledges an outbox result in the same database
+transaction that persists its evidence record and updates the session. Unacknowledged
+results are replayable by idempotency key after an interruption; this creates one
+ordered audit trail without concurrent memory writers.
 Structured memory evidence and delegation payloads reject secret-like field names and
 common credential formats before persistence. The outbox keeps only typed identifiers
 and artifact references; detailed findings belong in task artifacts. Secrets belong

@@ -33,13 +33,16 @@ read-only router first. If you specifically ask to restore but do not remember a
 flowchart TD
     work["work project"] --> count{Active task packages?}
     count -->|0| intake["Ask for title and work class"]
-    intake --> start["start --apply\ncreates package and starts Socrates"]
+    intake --> start["start --apply\ncreates package and Socrates-chat request"]
+    start --> chat["Root creates or reopens\nthe separate Socrates chat"]
+    chat --> claim["Socrates claims task id\nwith its chat thread id"]
     count -->|1| one["Show the task and restore it"]
     count -->|2 or more| list["Show numbered list:\nnumber, title, task id, work class"]
     list --> choice["You choose number, title, or task id"]
     choice --> restore["restore exact task id"]
     one --> restore
-    restore --> packet["Return checklist, next action, evidence,\npending results, Guards and memory"]
+    restore --> packet["Return checklist, chat binding, evidence,\npending results, Guards and memory"]
+    packet --> chat
 ```
 
 You do not need to remember ids. `restore` without an argument shows every active task
@@ -51,19 +54,23 @@ Saying or typing the ordinary word `start` is not an operating-system action. A 
 starts only when the Fabric skill invokes `start ... --apply`. This is intentional: it
 prevents a casual sentence from creating project state.
 
-`restore` does not execute the next step or run a project command. It reconstructs the
-chosen task's packet. Socrates reads `next_action` and waits for the applicable task
-workflow before doing work. A completed checklist step remains completed; a missing
-memory database is reported as a recovery problem rather than recreated as an empty
-task.
+`start --apply` does not prove that Socrates is live. It creates a pending chat claim.
+Root creates the separate Socrates chat, delivers the returned activation packet, and
+does not continue the task. `restore` does not execute the next step or run a project
+command. It reconstructs the chosen task packet and returns the bound chat id when one
+exists, so Root can reopen that exact chat. Socrates claims the task and then reads its
+`next_action` before doing work. A completed checklist step remains completed; a
+missing memory database is reported as a recovery problem rather than recreated as an
+empty task.
 
 ## What Socrates is
 
 Socrates is the project-local orchestration role, not a background daemon. A task has
-one durable Socrates lifecycle in its project-local memory. It owns task transitions,
-delegation records, Guard outcomes, and Harness signals. Specialists return bounded
-results and evidence artifacts; they do not choose retry policy or persist project
-memory.
+one durable Socrates lifecycle in its project-local memory and one visible, claimed
+Socrates chat. It owns task transitions, delegation records, Guard outcomes, and
+Harness signals. Specialists return bounded results and evidence artifacts; they do
+not choose retry policy or persist project memory. Root opens that chat and remains an
+entry/recovery coordinator; it is not Socrates and must not create specialist chats.
 
 ## Guards: what happens after an error
 

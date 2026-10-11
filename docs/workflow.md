@@ -5,7 +5,7 @@ paths, tracker identities, service ports, client-specific commands, and credenti
 Those belong to the project profile and optional adapters.
 
 ```text
-open project through a selected client
+Root opens project through a selected client
         |
         v
 read-only Fabric status -> bound release + local profile + local memory
@@ -14,13 +14,22 @@ read-only Fabric status -> bound release + local profile + local memory
 detect host/client capabilities -> restore relevant task state
         |
         v
+Root creates or reopens the task's separate Socrates chat
+        |
+        v
+Socrates claims the durable task id and owns all remaining transitions
+        |
+        v
 triage the work
   | local correction        | small bug             | planned work
   v                         v                       v
 bounded edit + evidence   tasks + evidence     spec -> research -> plan
                                                   |              |
                                                   v              v
-                                           Kepler verdict <- revision
+                              Aristotle evidence -> Plato plan -> Kepler verdict
+                                                  |
+                                                  v
+                                           revision, if required
                                                   |
                                      required human approval
                                                   |
@@ -47,10 +56,11 @@ bounded edit + evidence   tasks + evidence     spec -> research -> plan
 
 A client-facing `work` entrypoint is a router, not another workflow: it either restores
 one known active task or starts new-task intake. It never silently starts over and never
-mixes multiple task packages. `start --apply` creates a task package and activates that
-task's project-local Socrates session; `restore` reactivates the same session and
-returns its durable context. Neither executes project work merely because the session
-was started or restored.
+mixes multiple task packages. `start --apply` creates a prepared task package and a
+`socrates_chat_request`; it must not claim that Socrates is running. The selected client
+adapter creates or reopens a separate chat for that task. Socrates claims the returned
+task id with that chat's thread id before lifecycle activation. Root remains only the
+entry and recovery boundary and must not impersonate Socrates or progress the task.
 
 For new planned work, Socrates materializes the applicable workflow checklist in the
 task package. Each step is `pending`, `in_progress`, `done`, or `skipped`; a completed
@@ -87,9 +97,10 @@ registry; it is not a substitute for the underlying evidence.
 
 Specialist results enter the project-local outbox with an idempotency key. Socrates is
 the sole durable-memory writer and can replay unacknowledged results safely after an
-interruption. `harness resume` remains read-only; `restore` reactivates Socrates but
-does not execute project work. Closing a task requires the applicable local evidence
-and moves its package to a recoverable archive; it never deletes history.
+interruption. `harness resume` remains read-only; `restore` returns the saved Socrates
+chat binding or a request to create it, but does not execute project work. Closing a
+task requires the applicable local evidence and moves its package to a recoverable
+archive; it never deletes history.
 
 ## Guards and concrete failures
 

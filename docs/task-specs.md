@@ -1,6 +1,6 @@
 # Task specs
 
-`spec create` is a compatibility alias that creates a durable, project-local task package and starts its Socrates lifecycle under
+`spec create` is a compatibility alias that creates a durable, project-local task package and a pending separate-Socrates-chat claim under
 `<profile.task_specs.root>/active/<task-id>/` (by default,
 `docs/specs/active/<task-id>/`). It never contacts an external tracker. The configured
 root must be a relative path inside the target project; absolute paths and parent
@@ -14,7 +14,7 @@ deterministic English glossary with ASCII transliteration fallback; explicit `--
 values must already be ASCII kebab-case and are rejected before any state is written.
 Use `recover-unicode-package <project> <legacy-directory> --json` to preview a
 legacy Unicode package migration, then repeat with `--apply` to rename it, update its
-metadata, and create its Socrates lifecycle through the supported API.
+metadata, and prepare its Socrates chat claim through the supported API.
 
 ## Work classes
 
@@ -49,6 +49,22 @@ to overwrite an existing package. Planned work may not proceed while its require
 artifacts are missing. `spec archive <project> <task-id> --reason "..."` validates and
 moves the complete package to `<profile.task_specs.root>/archived/`; it does not delete
 evidence.
+
+## Separate Socrates chat claim
+
+`start --apply` creates the package in `awaiting-socrates-chat` state and returns a
+machine-readable `socrates_chat_request`. Root creates or reopens the named separate
+client chat and provides its thread id to that chat. Before any lifecycle step or
+delegation, the separate chat runs:
+
+```text
+ai-agent-fabric socrates claim <project> --session <task-id> --thread-id <chat-thread-id> --json
+```
+
+The claim is durable and idempotent for the same chat; a different chat is rejected.
+`restore` returns the saved chat binding so Root reopens the same chat rather than
+creating a replacement. A prepared task is not evidence that Socrates, Aristotle,
+Plato, Kepler, Heracles, Athena, or Euclid has executed.
 
 ## Implementation gate
 

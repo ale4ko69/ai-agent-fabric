@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .harness import flush_guard_traces, resume_snapshot
-from .memory import activate_task_lifecycle, database_path, initialize, record, require_current_schema
+from .memory import activate_task_lifecycle, database_path, initialize, prepare_socrates_chat, record, require_current_schema
 from .identifiers import require_task_id, slugify
 from .task_specs import create_task, package_path, task_root, workflow_steps
 
@@ -41,12 +41,12 @@ def start_preview(project_root: Path, title: str, work_class: str, task_id: str 
         "task_id": stable_id,
         "work_class": work_class,
         "package": str(package),
-        "action": "create-project-local-task-package-and-start-socrates",
+        "action": "create-project-local-task-package-and-request-separate-socrates-chat",
     }
 
 
 def start_task(project_root: Path, title: str, work_class: str, task_id: str | None = None) -> dict[str, Any]:
-    """Create a task package and activate its project-local Socrates session."""
+    """Create a task package and wait for a separate Socrates chat to claim it."""
     start_preview(project_root, title, work_class, task_id)
     root = project_root.resolve()
     stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
@@ -57,13 +57,13 @@ def start_task(project_root: Path, title: str, work_class: str, task_id: str | N
             root, stable_id, title, str(package.relative_to(root)).replace("\\", "/"), workflow_steps(work_class), "start",
             {"task_package": str(package.relative_to(root)).replace("\\", "/")},
         )
+        prepare_socrates_chat(root, stable_id)
     except BaseException:
         # Package publication is compensated on lifecycle failure; never strand a new orphan.
         shutil.rmtree(package, ignore_errors=True)
         raise
     flush_guard_traces(root)
-    socrates = {"lifecycle": "started", **lifecycle}
-    return {"package": str(package), "task_id": stable_id, "socrates": socrates, "socrates_handoff": _socrates_handoff(stable_id, title, socrates)}
+    return {"package": str(package), "task_id": stable_id, "socrates_chat_request": _socrates_chat_request(stable_id, title)}
 
 
 def recover_unicode_package(project_root: Path, source_name: str, task_id: str | None = None, *, apply: bool = False) -> dict[str, str]:
@@ -94,6 +94,7 @@ def recover_unicode_package(project_root: Path, source_name: str, task_id: str |
     source.replace(destination)
     try:
         activate_task_lifecycle(root, stable_id, metadata["title"], str(destination.relative_to(root)).replace("\\", "/"), workflow_steps(metadata["work_class"]), "start")
+        prepare_socrates_chat(root, stable_id)
         record(root, stable_id, "task-recovered", "orchestrator", "unicode-package-recovered", {"task_package": str(destination.relative_to(root)).replace("\\", "/")})
     except BaseException:
         destination.replace(source)
@@ -102,7 +103,7 @@ def recover_unicode_package(project_root: Path, source_name: str, task_id: str |
 
 
 def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:
-    """Resume one task's project-local Socrates session and return its context."""
+    """Return task context without letting Root resume or impersonate Socrates."""
     root = project_root.resolve()
     package = package_path(root, task_id)
     metadata = json.loads((package / "task.json").read_text(encoding="utf-8"))
@@ -113,33 +114,21 @@ def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:
     if not database_path(root).is_file():
         raise FileNotFoundError("Task memory is missing; restore requires the original project-local memory.db")
     require_current_schema(root)
-    lifecycle = activate_task_lifecycle(root, metadata["id"], metadata["title"], str(package.relative_to(root)).replace("\\", "/"), workflow_steps(metadata.get("work_class", "")), "restore")
-    record(
-        root,
-        metadata["id"],
-        "task-restored",
-        "orchestrator",
-        "task-lifecycle-restored",
-        {"task_package": str(package.relative_to(root)).replace("\\", "/")},
-    )
-    flush_guard_traces(root)
     snapshot = resume_snapshot(root, metadata["id"])
-    snapshot["socrates"] = {"lifecycle": "resumed", **lifecycle}
-    snapshot["socrates_handoff"] = _socrates_handoff(metadata["id"], metadata["title"], snapshot["socrates"])
+    snapshot["socrates_chat_request"] = _socrates_chat_request(metadata["id"], metadata["title"])
     return snapshot
 
 
-def _socrates_handoff(task_id: str, title: str, lifecycle: dict[str, Any]) -> dict[str, Any]:
-    """Adapter-facing ownership boundary after a successful task lifecycle operation."""
+def _socrates_chat_request(task_id: str, title: str) -> dict[str, str]:
+    """Adapter-facing request to create the task's separate Socrates chat."""
     return {
-        "owner": "socrates",
+        "owner": "root",
         "task_id": task_id,
         "title": title,
-        "lifecycle": lifecycle["lifecycle"],
-        "next_action": lifecycle["next_action"],
-        "visible_intro": f"I am Socrates, the orchestrator for {title}. The next safe action is {lifecycle['next_action']}.",
-        "root_limit": "Root must not plan, delegate, implement, or mutate this task after this handoff; it may only report a failure and run explicit Socrates recovery.",
-        "recovery_command": f"restore <project-root> {task_id} --json",
+        "action": "create-separate-socrates-chat",
+        "chat_title": f"Socrates — {title}",
+        "root_limit": "Root must create or reopen the separate Socrates chat and then must not plan, delegate, implement, or mutate this task.",
+        "socrates_activation": f"socrates claim <project-root> --session {task_id} --thread-id <created-chat-thread-id> --json",
     }
 
 

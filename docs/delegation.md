@@ -1,6 +1,6 @@
 # Delegation contract
 
-Socrates creates a delegation request only inside the current project's local memory
+Only a claimed, separate Socrates chat creates a delegation request inside the current project's local memory
 database. It is idempotent and contains identifiers and artifact references, not a
 copied prompt, secret, tracker payload, or another project's context.
 

@@ -19,13 +19,21 @@ the user explicitly confirms that preview:
 <fabric-launcher> start <project-root> --title "<title>" --type <planned|small-bug> --apply --json
 ```
 
-`--apply` creates the package **and starts the new task's project-local Socrates
-session**. It does not start a global/root orchestrator. Socrates now owns the task's
-delegation, durable memory, Guard failures, Harness signals, and next safe action.
+`--apply` creates the package and returns a `socrates_chat_request`; it does **not**
+claim that Socrates is running. Root must create a separate Codex chat with the returned
+`chat_title`, pass it the task id and the created chat thread id, and stop task work.
+Only that chat may run the returned `socrates_activation` command and become Socrates.
 
-When `created.socrates_handoff.owner` is `socrates`, introduce yourself to the user
-as Socrates (for example, “I am Socrates, the orchestrator for this task”) and follow
-the packet's next action. Root must not continue the task after this handoff.
+In Codex, use `create_thread` for that separate local project chat. Its initial prompt
+must identify the role as Socrates, task id, and the rule that it must not begin task
+work before receiving its activation packet. After creation, use the returned thread id
+in the `socrates_activation` packet and deliver that packet to the new chat. Do not
+create role-labelled specialist chats from Root. Socrates creates specialists only from
+inside its own task chat.
+
+Do not introduce Root as Socrates. The separate Socrates chat owns all task planning,
+delegation, implementation decisions, durable memory, Guard failures, Harness signals,
+and user communication for the task.
 
 If `start` fails, stop project work. Report the failure and use only the explicit
 Fabric recovery path when applicable; Root must not implement the requested task.
