@@ -61,6 +61,44 @@ For each host, verify only these lifecycle operations in order:
    symlink produces controlled `invalid`/error status without a write outside the
    target.
 
+## Release delivery chain
+
+Before declaring a Fabric release delivered, verify this complete ordered chain. A
+passing source test suite is necessary but does not replace any delivery check.
+
+```text
+committed source revision
+  -> immutable release manifest and release adapter bootstrap
+  -> stable Fabric-home adapter bootstrap
+  -> managed client entry point
+  -> each explicitly updated project's binding and context
+```
+
+For the selected release and client, record the following non-secret evidence:
+
+1. **Source identity:** the committed revision and the version declared by
+   `pyproject.toml` match the release being installed.
+2. **Immutable artifact:** the release exists under
+   `<fabric-home>/releases/<version>/`, and its manifest validates every declared
+   file, including `adapters/<client>/bootstrap.md`.
+3. **Stable bootstrap:** compare SHA-256 for the release bootstrap and
+   `<fabric-home>/adapters/<client>/bootstrap.md`; they must be byte-for-byte equal.
+4. **Managed client entry:** when the client adapter is enabled, verify its
+   installer-owned entry still references the stable bootstrap and has not been
+   externally replaced. If the adapter is not enabled, record that as an unverified
+   client-delivery row, not as a successful global-entry check.
+5. **Project boundary:** for each project the owner explicitly updates, run
+   `project context <project> --json`; both `release` and `current_release` must equal
+   the selected version, and the returned contract paths must resolve below that
+   immutable release. Do not infer that other projects updated merely because the
+   global current release changed.
+
+Any mismatch is a delivery failure. Do not claim the release is active, do not treat
+its rules as globally applied, and do not update further project bindings from that
+release. Preserve the immutable artifact for diagnosis, correct the source, then ship
+a new version through preview and repeat this entire chain. Never overwrite an existing
+immutable release or manually edit the stable bootstrap to conceal the mismatch.
+
 ## Client rows
 
 The selected delivery method is part of the row. A version string observed by
