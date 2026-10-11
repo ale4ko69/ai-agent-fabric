@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "enforce-autonomous-socrates-progression",
+  "title": "Enforce autonomous Socrates progression",
+  "work_class": "planned",
+  "status": "active",
+  "tracker": {
+    "provider": "none",
+    "reference": null,
+    "url": null
+  },
+  "workflow": {
+    "schema_version": 1,
+    "spec_revision": 3,
+    "plan_revision": 3
+  }
+}

@@ -1651,7 +1651,7 @@ def _write_release_adapters(release: Path) -> None:
             "of those workflows, use the matching Agent Fabric skill. The bound release supplies "
             "only shared contracts and project rules.\n\n"
             + ("For Codex: after successful `start --apply` or `restore`, read `socrates_chat_request`. Root must create or reopen the named separate Socrates chat, pass it the task id and created chat thread id, then stop task work. Only that chat may run the returned Socrates activation command and own planning, delegation, implementation decisions, durable state, and task-user communication. Root must not present itself as Socrates. If start, restore, chat creation, or activation-packet delivery fails, Root may only report the failure and use the explicit Fabric recovery path.\n\n" if client == "codex" else "")
-            + ("For Codex task close-out: distinguish the current task's acceptance criteria, validation explicitly requested by the user, and separate rollout actions. Commits, pushes, GitHub actions, release installation, and project-binding updates require their own user authorization unless the current task explicitly makes one an acceptance criterion. Do not make an unrequested rollout action a close-out blocker.\n\n" if client == "codex" else "")
+            + ("For Codex task close-out: when the owner has declared autonomous delivery for the task, successful acceptance criteria, review, validation, and an unblocked lifecycle authorize the complete bounded rollout without per-command approval: commit only task-scoped changes, push to the configured remote, and run the project's declared release action. The claimed Socrates chat must continue into the durable `rollout` step and may not mark the task completed before recording its delivery evidence. Stop only for a concrete Guard outcome, a missing configured delivery mechanism, or a scope/credential change outside the accepted task; return the reason and recommended owner action rather than silently waiting.\n\n" if client == "codex" else "")
             + f"The canonical global Fabric launcher is `{launcher}`. Use it for every Fabric command; "
             "it selects the active installed release. A project path only selects that project's local "
             "context and never supplies a project-local executable.\n\n"
@@ -1964,19 +1964,11 @@ def _migrate_project_memory(project: Path, fabric_home: Path, release: str) -> N
         raise ValueError("Project memory is newer than the selected release and cannot be downgraded")
     if current_version == target_version:
         return
-    launcher = release_path(fabric_home, release) / "bin" / "ai-agent-fabric"
-    if not launcher.is_file():
-        raise ValueError(f"Selected release has no launcher: {launcher}")
-    environment = os.environ.copy()
-    environment["AI_AGENT_FABRIC_HOME"] = str(fabric_home)
-    release_source = str(release_path(fabric_home, release) / "src")
-    environment["PYTHONPATH"] = release_source + (os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else "")
-    subprocess.run(
-        [sys.executable, "-B", "-m", "ai_agent_fabric", "memory", "init", str(project), "--home", str(fabric_home)],
-        check=True,
-        env=environment,
-        stdout=subprocess.DEVNULL,
-    )
+    # This function runs from the selected, manifest-validated release.  Calling
+    # the CLI here would re-check the *old* project binding and therefore make a
+    # damaged current release impossible to repair.  Migrate the local database
+    # directly instead; the pending-update journal preserves recoverability.
+    initialize(project)
     if schema_version(project) != target_version:
         raise ValueError("Selected release did not produce its declared memory schema version")
 

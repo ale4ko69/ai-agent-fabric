@@ -11,7 +11,8 @@ evidence, but may not redefine a gate, transition, or required evidence name.
 | `scope` | `implementation-continues` | `approved-spec`, `scope-check` |
 | `review` | `review-complete` | `changed-artifacts`, `review-result` |
 | `validation` | `task-close-ready` | `validation-evidence` |
-| `close-out` | `archived` | `close-out-evidence`, `archive-record` |
+| `close-out` | `rollout-ready` | `close-out-evidence` |
+| `rollout` | `archived` | `delivery-evidence`, `archive-record` |
 | `resume` | `resumed` | `task-state`, `memory-restore` |
 
 `harness checkpoint <project> --gate <id> --evidence '["..."]' [--home <fabric-home>]` reads the gate

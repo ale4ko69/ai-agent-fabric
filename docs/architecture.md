@@ -77,6 +77,13 @@ common credential formats before persistence. The outbox keeps only typed identi
 and artifact references; detailed findings belong in task artifacts. Secrets belong
 only in the declared credential destination.
 
+When Socrates closes a lifecycle step, the same SQLite transaction derives the next
+state. A successor internal step is marked `in-progress` before the transition returns;
+it cannot remain a merely descriptive pending `next_action`. The only non-running
+outcomes are `awaiting-owner-approval`, Guard-derived `blocked` or `escalated`, and
+`completed`. Each non-running result includes a bounded reason and a recommended next
+action so a task never silently waits for the owner to discover its state.
+
 The matching project-local request envelope keeps delegation scope as references to
 task artifacts rather than copying mutable prompt text. See [delegation contract](delegation.md).
 

@@ -297,6 +297,19 @@ This distinction is intentional: a recovery command can reconstruct context afte
 crash without silently resuming execution. Socrates reads the restored state, identifies
 the first unfinished safe step, and waits for the applicable workflow direction.
 
+A claimed Socrates step transition does not leave the next internal action as a passive
+label: it marks that successor `in-progress` atomically. The returned continuation is
+either `resume`, `await-owner-approval`, `blocked`, `escalated`, or `completed`.
+Every non-running continuation includes a machine-readable reason and recommended next
+action, so the owner receives an actionable stop explanation rather than silence.
+
+When the owner has declared autonomous delivery for a task, the durable workflow also
+requires its `rollout` step after review and validation. It authorizes one bounded
+delivery sequence: task-scoped commit, push to the configured remote, and the project's
+declared release action, without asking again for each command. Completion is blocked
+until delivery evidence is recorded; only a Guard outcome, unavailable declared
+mechanism, or a new scope or credential requirement returns an actionable stop request.
+
 `restore` refuses to invent a new empty memory database for an existing task package.
 That missing-state condition is surfaced for recovery instead of restarting completed work.
 
@@ -336,7 +349,7 @@ new request
                                                  -> human approval
                                                  -> scoped implementation
                                                  -> Athena review -> validation
-                                                 -> evidence and archive
+                                                 -> evidence -> close-out -> rollout -> archive
 ```
 
 For planned work, Aristotle establishes evidence, Plato creates the bounded plan, and
