@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "spec_revision": 3,
+  "plan_revision": 3,
+  "artifact_digests": {
+    "spec.md": "de3928c48db8723a816970e60ec8fea2149977cd26f19328f63e9a91d3677b72",
+    "research.md": "9c3494e3142dcc2e27728401a6ceb2d76f9a5372365d56a780e735674f914f0b",
+    "plan.md": "00861fd7de7dc5374e59084500d702dbdc554d1689f2ee9da284a6ff6271e8a8"
+  },
+  "kepler_verdict_sha256": "04a5de0c918e2f8509bc41cb031449c45f7e6b4e3da16c563cda251b8e436519",
+  "approved": true,
+  "approved_by": "human",
+  "approval_method": "interactive-terminal",
+  "approved_at": "2026-10-11T12:15:06Z"
+}

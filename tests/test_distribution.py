@@ -127,7 +127,8 @@ class DistributionLifecycleTest(unittest.TestCase):
             self.assertIn("create or reopen the named separate Socrates chat", bootstrap)
             self.assertIn("Root must not present itself as Socrates", bootstrap)
             self.assertIn("chat creation, or activation-packet delivery fails", bootstrap)
-            self.assertIn("Do not make an unrequested rollout action a close-out blocker", bootstrap)
+            self.assertIn("autonomous delivery", bootstrap)
+            self.assertIn("durable `rollout` step", bootstrap)
             stable_bootstrap = (home / "adapters" / "codex" / "bootstrap.md").read_text(encoding="utf-8")
             self.assertEqual(stable_bootstrap, bootstrap)
 

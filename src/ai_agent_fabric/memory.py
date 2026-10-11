@@ -12,7 +12,7 @@ from .project_state import state_path
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
 CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"}
-MEMORY_SCHEMA_VERSION = 10
+MEMORY_SCHEMA_VERSION = 12
 SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 SAFE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
 SECRET_VALUE_PATTERNS = (
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS task_lifecycles (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
   task_package TEXT NOT NULL,
   next_action TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('active', 'blocked', 'escalated')),
+  status TEXT NOT NULL CHECK(status IN ('active', 'awaiting-owner-approval', 'blocked', 'escalated', 'completed')),
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   resumed_at TEXT
 );
@@ -186,11 +186,52 @@ def initialize(project_root: Path) -> Path:
                 "UPDATE task_lifecycles SET next_action='awaiting-socrates-chat' "
                 "WHERE session_id IN (SELECT session_id FROM socrates_chats WHERE status='awaiting-claim')"
             )
+        if prior_version < 11:
+            _migrate_task_lifecycle_states(connection)
+        if prior_version < 12:
+            _add_rollout_steps(connection)
         connection.execute(f"PRAGMA user_version={MEMORY_SCHEMA_VERSION}")
         connection.commit()
     finally:
         connection.close()
     return database_path(project_root)
+
+
+def _migrate_task_lifecycle_states(connection: sqlite3.Connection) -> None:
+    """Expand lifecycle states and resume legacy internal successors safely."""
+    connection.execute("ALTER TABLE task_lifecycles RENAME TO task_lifecycles_legacy")
+    connection.execute(
+        "CREATE TABLE task_lifecycles ("
+        "session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, "
+        "task_package TEXT NOT NULL, next_action TEXT NOT NULL, "
+        "status TEXT NOT NULL CHECK(status IN ('active', 'awaiting-owner-approval', 'blocked', 'escalated', 'completed')), "
+        "started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resumed_at TEXT)"
+    )
+    connection.execute(
+        "INSERT INTO task_lifecycles(session_id, task_package, next_action, status, started_at, resumed_at) "
+        "SELECT session_id, task_package, next_action, status, started_at, resumed_at FROM task_lifecycles_legacy"
+    )
+    connection.execute("DROP TABLE task_lifecycles_legacy")
+    for row in connection.execute(
+        "SELECT lifecycle.session_id, chat.status AS chat_status FROM task_lifecycles AS lifecycle "
+        "LEFT JOIN socrates_chats AS chat ON chat.session_id=lifecycle.session_id"
+    ).fetchall():
+        if row["chat_status"] == "claimed":
+            action = _derive_task_action(connection, row["session_id"])
+            connection.execute(
+                "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
+                (action["next_action"], action["status"], row["session_id"]),
+            )
+
+
+def _add_rollout_steps(connection: sqlite3.Connection) -> None:
+    """Require delivery for active legacy tasks without reopening completed work."""
+    connection.execute(
+        "INSERT INTO task_steps(session_id, step_id, status) "
+        "SELECT lifecycle.session_id, 'rollout', 'pending' FROM task_lifecycles AS lifecycle "
+        "WHERE lifecycle.status <> 'completed' "
+        "AND NOT EXISTS (SELECT 1 FROM task_steps AS step WHERE step.session_id=lifecycle.session_id AND step.step_id='rollout')"
+    )
 
 
 def require_current_schema(project_root: Path) -> None:
@@ -297,7 +338,10 @@ def activate_task_lifecycle(
                 raise ValueError("task lifecycle package does not match its existing session")
             if mode == "restore":
                 connection.execute("UPDATE task_lifecycles SET resumed_at=CURRENT_TIMESTAMP WHERE session_id=?", (session_id,))
-            active = _next_task_action(connection, session_id)
+            chat = connection.execute(
+                "SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)
+            ).fetchone()
+            active = _derive_task_action(connection, session_id) if chat is not None and chat["status"] == "claimed" else _initial_task_action(connection, session_id)
             connection.execute(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (active["next_action"], active["status"], session_id),
@@ -331,7 +375,7 @@ def prepare_socrates_chat(project_root: Path, session_id: str) -> None:
         connection.close()
 
 
-def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> dict[str, str]:
+def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> dict[str, Any]:
     """Bind one visible Socrates chat before it may run the task lifecycle."""
     if not _safe_identifier(session_id) or not _safe_identifier(thread_id):
         raise ValueError("Socrates chat identifiers must be safe")
@@ -345,14 +389,14 @@ def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> 
             if row["status"] == "claimed":
                 if row["thread_id"] != thread_id:
                     raise ValueError("Task is already claimed by a different Socrates chat")
-                action = _next_task_action(connection, session_id)
+                action = _derive_task_action(connection, session_id)
                 return {"thread_id": thread_id, **action}
             connection.execute(
                 "UPDATE socrates_chats SET thread_id=?, status='claimed', claimed_at=COALESCE(claimed_at, CURRENT_TIMESTAMP) WHERE session_id=?",
                 (thread_id, session_id),
             )
             connection.execute("UPDATE sessions SET status='active', updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
-            action = _next_task_action(connection, session_id)
+            action = _derive_task_action(connection, session_id)
             connection.execute("UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?", (action["next_action"], action["status"], session_id))
             connection.execute(
                 "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, 'socrates-chat-claimed', 'orchestrator', 'socrates-chat-claimed', ?)",
@@ -363,22 +407,92 @@ def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> 
         connection.close()
 
 
-def _next_task_action(connection: sqlite3.Connection, session_id: str) -> dict[str, str]:
+def _derive_task_action(connection: sqlite3.Connection, session_id: str) -> dict[str, Any]:
+    """Persist the only permitted post-transition state for one task lifecycle."""
     escalated = connection.execute(
         "SELECT 1 FROM guard_failures WHERE session_id=? AND status='escalated' LIMIT 1", (session_id,)
     ).fetchone()
     if escalated is not None:
-        return {"next_action": "user-escalation", "status": "escalated"}
+        return {
+            "next_action": "user-escalation",
+            "status": "escalated",
+            "continuation": {
+                "kind": "escalated",
+                "reason": "guard-escalated",
+                "recommended_action": "provide-owner-direction",
+            },
+        }
     blocked = connection.execute(
         "SELECT 1 FROM guard_failures WHERE session_id=? AND status='blocked' LIMIT 1", (session_id,)
     ).fetchone()
     if blocked is not None:
-        return {"next_action": "guard-blocked", "status": "blocked"}
+        return {
+            "next_action": "guard-blocked",
+            "status": "blocked",
+            "continuation": {
+                "kind": "blocked",
+                "reason": "guard-blocked",
+                "recommended_action": "resolve-guard-blocker",
+            },
+        }
+    steps = connection.execute(
+        "SELECT rowid, step_id, status FROM task_steps WHERE session_id=? ORDER BY rowid", (session_id,)
+    ).fetchall()
+    step_position = next((index for index, item in enumerate(steps) if item["status"] not in {"done", "skipped"}), None)
+    step = steps[step_position] if step_position is not None else None
+    if step is None:
+        return {
+            "next_action": "archive",
+            "status": "completed",
+            "continuation": {
+                "kind": "completed",
+                "reason": "workflow-complete",
+                "recommended_action": "archive-task",
+            },
+        }
+    # A legacy database can contain more than one in-progress row. The first open
+    # workflow row is authoritative; later rows were never safely dispatched.
+    for later in steps[step_position + 1:]:
+        if later["status"] == "in-progress":
+            connection.execute(
+                "UPDATE task_steps SET status='pending' WHERE session_id=? AND step_id=?",
+                (session_id, later["step_id"]),
+            )
+    if step["status"] == "pending":
+        connection.execute(
+            "UPDATE task_steps SET status='in-progress' WHERE session_id=? AND step_id=?",
+            (session_id, step["step_id"]),
+        )
+    if step["step_id"] == "human-approval":
+        return {
+            "next_action": "owner-approval",
+            "status": "awaiting-owner-approval",
+            "continuation": {
+                "kind": "await-owner-approval",
+                "reason": "owner-approval-required",
+                "recommended_action": "approve-reviewed-package",
+            },
+        }
+    return {
+        "next_action": step["step_id"],
+        "status": "active",
+        "continuation": {"kind": "resume", "step_id": step["step_id"]},
+    }
+
+
+def _initial_task_action(connection: sqlite3.Connection, session_id: str) -> dict[str, Any]:
+    """Describe an unclaimed lifecycle without changing its workflow rows."""
     step = connection.execute(
-        "SELECT step_id FROM task_steps WHERE session_id=? AND status IN ('in-progress', 'pending') "
-        "ORDER BY CASE status WHEN 'in-progress' THEN 0 ELSE 1 END, rowid LIMIT 1", (session_id,)
+        "SELECT step_id FROM task_steps WHERE session_id=? AND status NOT IN ('done', 'skipped') ORDER BY rowid LIMIT 1",
+        (session_id,),
     ).fetchone()
-    return {"next_action": step["step_id"] if step is not None else "archive", "status": "active"}
+    if step is None:
+        return {"next_action": "archive", "status": "completed", "continuation": {"kind": "completed", "reason": "workflow-complete", "recommended_action": "archive-task"}}
+    return {
+        "next_action": step["step_id"],
+        "status": "active",
+        "continuation": {"kind": "resume", "step_id": step["step_id"]},
+    }
 
 
 def advance_task_step(
@@ -424,7 +538,7 @@ def advance_task_step(
                     "UPDATE task_steps SET status=?, closure_artifact=?, closure_reason=? WHERE session_id=? AND step_id=?",
                     (status, closure_artifact, closure_reason, session_id, step_id),
                 )
-            active = _next_task_action(connection, session_id)
+            active = _derive_task_action(connection, session_id)
             connection.execute(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (active["next_action"], active["status"], session_id),
@@ -613,15 +727,43 @@ def restore(project_root: Path, session_id: str) -> dict[str, Any]:
         ).fetchall()
     finally:
         connection.close()
+    lifecycle_payload = dict(lifecycle) if lifecycle is not None else None
+    if lifecycle_payload is not None:
+        lifecycle_payload["continuation"] = _continuation_from_lifecycle(lifecycle_payload)
     return {
         "session": dict(session),
         "records": [{**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows],
         "guard_failures": [dict(row) for row in failures],
         "guard_outcomes": [dict(row) for row in outcomes],
-        "lifecycle": dict(lifecycle) if lifecycle is not None else None,
+        "lifecycle": lifecycle_payload,
         "socrates_chat": dict(socrates_chat) if socrates_chat is not None else None,
         "steps": [dict(row) for row in steps],
     }
+
+
+def _continuation_from_lifecycle(lifecycle: dict[str, Any]) -> dict[str, str]:
+    """Explain a persisted lifecycle state without changing durable task data."""
+    status = lifecycle.get("status")
+    next_action = lifecycle.get("next_action")
+    if status == "awaiting-owner-approval":
+        return {
+            "kind": "await-owner-approval",
+            "reason": "owner-approval-required",
+            "recommended_action": "approve-reviewed-package",
+        }
+    if status == "blocked":
+        return {"kind": "blocked", "reason": "guard-blocked", "recommended_action": "resolve-guard-blocker"}
+    if status == "escalated":
+        return {"kind": "escalated", "reason": "guard-escalated", "recommended_action": "provide-owner-direction"}
+    if status == "completed":
+        return {"kind": "completed", "reason": "workflow-complete", "recommended_action": "archive-task"}
+    if next_action == "awaiting-socrates-chat":
+        return {
+            "kind": "await-socrates-claim",
+            "reason": "separate-socrates-chat-required",
+            "recommended_action": "claim-separate-socrates-chat",
+        }
+    return {"kind": "resume", "step_id": str(next_action)}
 
 
 def _persist_guard_failure(
@@ -657,7 +799,12 @@ def _persist_guard_failure(
                 (idempotency_key,),
             ).fetchone()
             if existing is not None:
-                return {"created": False, "failure": _guard_failure_payload(existing)}
+                action = _derive_task_action(connection, session_id)
+                connection.execute(
+                    "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
+                    (action["next_action"], action["status"], session_id),
+                )
+                return {"created": False, "failure": _guard_failure_payload(existing), **action}
             session = connection.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
             if session is None:
                 raise KeyError(session_id)
@@ -702,6 +849,11 @@ def _persist_guard_failure(
                 ),
             )
             connection.execute("UPDATE sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
+            action = _derive_task_action(connection, session_id)
+            connection.execute(
+                "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
+                (action["next_action"], action["status"], session_id),
+            )
             row = connection.execute(
                 "SELECT failure.idempotency_key, failure.session_id, failure.incident_id, failure.taxonomy, failure.guard, failure.evidence_artifact, "
                 "failure.policy, failure.status, outcome.idempotency_key AS outcome_key, outcome.outcome, outcome.attempt "
@@ -709,7 +861,7 @@ def _persist_guard_failure(
                 "WHERE failure.idempotency_key=?",
                 (idempotency_key,),
             ).fetchone()
-        return {"created": True, "failure": _guard_failure_payload(row)}
+        return {"created": True, "failure": _guard_failure_payload(row), **action}
     finally:
         connection.close()
 

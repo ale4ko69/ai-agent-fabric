@@ -39,7 +39,7 @@ bounded edit + evidence   tasks + evidence     spec -> research -> plan
                                       Athena review -> validation
                                                   |
                                                   v
-                                      evidence -> close-out/archive
+                                      evidence -> close-out -> rollout -> archive
 ```
 
 ## Session start
@@ -100,7 +100,12 @@ the sole durable-memory writer and can replay unacknowledged results safely afte
 interruption. `harness resume` remains read-only; `restore` returns the saved Socrates
 chat binding or a request to create it, but does not execute project work. Closing a
 task requires the applicable local evidence and moves its package to a recoverable
-archive; it never deletes history.
+archive; it never deletes history. When the owner has declared autonomous delivery,
+successful review and validation automatically resume the durable `rollout` step.
+Socrates commits only task-scoped changes, pushes to the configured remote, and invokes
+the project's declared release action before it may complete the task. A Guard outcome,
+missing delivery mechanism, or newly required scope/credential is an actionable
+blocker; routine commit, push, and release operations do not require separate approval.
 
 ## Guards and concrete failures
 

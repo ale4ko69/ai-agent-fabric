@@ -12,8 +12,8 @@ from .identifiers import require_task_id, slugify
 
 WORK_CLASSES = {"small-bug", "planned"}
 WORKFLOW_STEPS = {
-    "small-bug": ("intake", "evidence", "implementation", "review", "validation", "close-out"),
-    "planned": ("intake", "discovery", "plan", "kepler", "human-approval", "implementation", "review", "validation", "close-out"),
+    "small-bug": ("intake", "evidence", "implementation", "review", "validation", "close-out", "rollout"),
+    "planned": ("intake", "discovery", "plan", "kepler", "human-approval", "implementation", "review", "validation", "close-out", "rollout"),
 }
 OUT_OF_SCOPE_DISPOSITIONS = {"none", "backlog", "amendment-request"}
 TASK_METADATA_FIELDS = {"schema_version", "id", "title", "work_class", "status", "tracker", "workflow"}

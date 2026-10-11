@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -87,7 +88,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(result["task_id"], task_id)
         restored = restore_task(self.project, task_id)
         self.assertEqual(restored["memory"]["session"]["id"], task_id)
-        self.assertEqual(len(restored["memory"]["steps"]), 6)
+        self.assertEqual(len(restored["memory"]["steps"]), 7)
 
     def test_unicode_orphan_package_has_preview_and_safe_recovery(self) -> None:
         source = self.project / "docs/specs/active/Проверить-компоненты"
@@ -238,6 +239,12 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         )
         self.assertEqual(result["failure"]["status"], "blocked")
         self.assertEqual(result["failure"]["outcome"], "block")
+        self.assertEqual(result["next_action"], "guard-blocked")
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(
+            result["continuation"],
+            {"kind": "blocked", "reason": "guard-blocked", "recommended_action": "resolve-guard-blocker"},
+        )
 
     def test_guards_command_records_trace_after_durable_failure(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
@@ -365,6 +372,125 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "immutable"):
             transition_step(self.project, "example-task", "intake", "in-progress")
+
+    def test_internal_closure_atomically_resumes_the_next_step(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        evidence = self.project / "docs/specs/active/example-task/evidence/intake.md"
+        evidence.write_text("# Intake complete\n", encoding="utf-8")
+
+        result = transition_step(
+            self.project, "example-task", "intake", "done",
+            "docs/specs/active/example-task/evidence/intake.md", "intake-evidence-complete",
+        )
+
+        self.assertEqual(result["next_action"], "evidence")
+        self.assertEqual(result["status"], "active")
+        self.assertEqual(result["continuation"], {"kind": "resume", "step_id": "evidence"})
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["steps"][1]["status"], "in-progress")
+
+    def test_kepler_closure_waits_for_owner_with_actionable_reason(self) -> None:
+        start_task(self.project, "Example task", "planned", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        evidence_root = self.project / "docs/specs/active/example-task/evidence"
+        for step in ("intake", "discovery", "plan", "kepler"):
+            artifact = evidence_root / f"{step}.md"
+            artifact.write_text(f"# {step}\n", encoding="utf-8")
+            result = transition_step(
+                self.project, "example-task", step, "done",
+                f"docs/specs/active/example-task/evidence/{step}.md", f"{step}-complete",
+            )
+
+        self.assertEqual(result["next_action"], "owner-approval")
+        self.assertEqual(result["status"], "awaiting-owner-approval")
+        self.assertEqual(
+            result["continuation"],
+            {
+                "kind": "await-owner-approval",
+                "reason": "owner-approval-required",
+                "recommended_action": "approve-reviewed-package",
+            },
+        )
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["steps"][4]["status"], "in-progress")
+        self.assertEqual(restored["memory"]["lifecycle"]["continuation"], result["continuation"])
+
+    def test_final_closure_is_actionable_completion(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        evidence_root = self.project / "docs/specs/active/example-task/evidence"
+        for step in ("intake", "evidence", "implementation", "review", "validation", "close-out"):
+            artifact = evidence_root / f"{step}.md"
+            artifact.write_text(f"# {step}\n", encoding="utf-8")
+            result = transition_step(
+                self.project, "example-task", step, "done",
+                f"docs/specs/active/example-task/evidence/{step}.md", f"{step}-complete",
+            )
+
+        self.assertEqual(result["next_action"], "rollout")
+        self.assertEqual(result["continuation"], {"kind": "resume", "step_id": "rollout"})
+        artifact = evidence_root / "rollout.md"
+        artifact.write_text("# rollout\n", encoding="utf-8")
+        result = transition_step(
+            self.project, "example-task", "rollout", "done",
+            "docs/specs/active/example-task/evidence/rollout.md", "rollout-complete",
+        )
+
+        self.assertEqual(result["next_action"], "archive")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(
+            result["continuation"],
+            {"kind": "completed", "reason": "workflow-complete", "recommended_action": "archive-task"},
+        )
+
+    def test_schema_migration_resumes_a_legacy_pending_internal_step(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            connection.execute("ALTER TABLE task_lifecycles RENAME TO task_lifecycles_current")
+            connection.execute(
+                "CREATE TABLE task_lifecycles (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, "
+                "task_package TEXT NOT NULL, next_action TEXT NOT NULL, "
+                "status TEXT NOT NULL CHECK(status IN ('active', 'blocked', 'escalated')), "
+                "started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resumed_at TEXT)"
+            )
+            connection.execute(
+                "INSERT INTO task_lifecycles(session_id, task_package, next_action, status, started_at, resumed_at) "
+                "SELECT session_id, task_package, 'evidence', 'active', started_at, resumed_at FROM task_lifecycles_current"
+            )
+            connection.execute("DROP TABLE task_lifecycles_current")
+            connection.execute("UPDATE task_steps SET status='done' WHERE session_id='example-task' AND step_id='intake'")
+            connection.execute("UPDATE task_steps SET status='pending' WHERE session_id='example-task' AND step_id='evidence'")
+            connection.execute("PRAGMA user_version=10")
+            connection.commit()
+        finally:
+            connection.close()
+
+        initialize(self.project)
+
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["lifecycle"]["next_action"], "evidence")
+        self.assertEqual(restored["memory"]["lifecycle"]["status"], "active")
+        self.assertEqual(restored["memory"]["steps"][1]["status"], "in-progress")
+
+    def test_schema_migration_adds_rollout_to_active_legacy_task(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            connection.execute("DELETE FROM task_steps WHERE session_id='example-task' AND step_id='rollout'")
+            connection.execute("PRAGMA user_version=11")
+            connection.commit()
+        finally:
+            connection.close()
+
+        initialize(self.project)
+
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["steps"][-1]["step_id"], "rollout")
+        self.assertEqual(restored["memory"]["steps"][-1]["status"], "pending")
 
     def test_socrates_rejects_closing_a_step_without_evidence_and_reason(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
