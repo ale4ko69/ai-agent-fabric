@@ -1,8 +1,9 @@
 from pathlib import Path
+import json
 import tempfile
 import unittest
 
-from ai_agent_fabric.task_specs import create_task, slugify, validate_task
+from ai_agent_fabric.task_specs import approve_planned_task, approval_preview, create_task, implementation_readiness, slugify, validate_task
 from ai_agent_fabric.distribution import install_release, onboard_project
 
 
@@ -60,3 +61,27 @@ class TaskSpecsTest(unittest.TestCase):
             package = create_task(project, "Add account export", "planned")
             (package / "kepler.md").unlink()
             self.assertIn("Missing required artifact: kepler.md", validate_task(project, "add-account-export"))
+
+    def test_runtime_research_append_preserves_an_approved_planning_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = bound_project(Path(directory))
+            package = create_task(project, "Add account export", "planned")
+            kepler_path = package / "kepler.json"
+            kepler = json.loads(kepler_path.read_text(encoding="utf-8"))
+            kepler["verdict"] = "advice"
+            kepler_path.write_text(json.dumps(kepler, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            preview = approval_preview(project, "add-account-export")
+            digest = str(preview["kepler_verdict_sha256"])
+            approve_planned_task(project, "add-account-export", f"approve add-account-export {digest}", digest)
+            baseline = json.loads((package / "approval.json").read_text(encoding="utf-8"))["artifact_digests"]["research.md"]
+
+            with (package / "research.md").open("a", encoding="utf-8") as handle:
+                handle.write("\n## Runtime observation\n\n- Endpoint returned an unknown state.\n")
+
+            self.assertTrue(implementation_readiness(project, "add-account-export")["ready"])
+            self.assertEqual(approval_preview(project, "add-account-export")["artifact_digests"]["research.md"], baseline)
+
+            research_path = package / "research.md"
+            research_path.write_text(research_path.read_text(encoding="utf-8").replace("## Evidence", "## Changed evidence", 1), encoding="utf-8")
+            reasons = implementation_readiness(project, "add-account-export")["reasons"]
+            self.assertIn("Kepler verdict does not match the current spec, research, and plan content", reasons)

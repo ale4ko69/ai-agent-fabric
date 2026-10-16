@@ -76,8 +76,10 @@ stale approval, or an `amendment-request` all keep implementation blocked.
 
 The verdict and approval also carry SHA-256 values for the exact current `spec.md`,
 `research.md`, and `plan.md`; approval additionally binds the exact `kepler.json`.
-Any edit to one of those artifacts makes the package not ready until a fresh review and
-approval. `spec approve` first offers a non-mutating preview, then requires a person at
+The reviewed `research.md` prefix is immutable, but complete-line runtime observations
+may be appended after approval without re-opening the scope gate. An edit inside the
+reviewed prefix, or any edit to `spec.md` or `plan.md`, makes the package not ready
+until a fresh review and approval. `spec approve` first offers a non-mutating preview, then requires a person at
 an interactive TTY to type a confirmation containing the previewed Kepler-verdict hash.
 If any reviewed artifact changes while the person is deciding, the command fails closed
 and requires a new preview. This is a controlled workflow confirmation, not a
