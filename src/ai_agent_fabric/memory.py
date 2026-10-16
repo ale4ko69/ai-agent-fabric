@@ -12,7 +12,7 @@ from .project_state import state_path
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
 CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"}
-MEMORY_SCHEMA_VERSION = 12
+MEMORY_SCHEMA_VERSION = 13
 SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 SAFE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
 SECRET_VALUE_PATTERNS = (
@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS guard_outcomes (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS guard_outcomes_session_guard ON guard_outcomes(session_id, guard, id);
+CREATE TABLE IF NOT EXISTS guard_resolutions (
+  failure_key TEXT PRIMARY KEY REFERENCES guard_failures(idempotency_key) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  owner_direction TEXT NOT NULL,
+  evidence_artifact TEXT NOT NULL,
+  resolved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS guard_resolutions_session ON guard_resolutions(session_id, resolved_at);
 CREATE TABLE IF NOT EXISTS task_lifecycles (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
   task_package TEXT NOT NULL,
@@ -410,7 +418,8 @@ def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> 
 def _derive_task_action(connection: sqlite3.Connection, session_id: str) -> dict[str, Any]:
     """Persist the only permitted post-transition state for one task lifecycle."""
     escalated = connection.execute(
-        "SELECT 1 FROM guard_failures WHERE session_id=? AND status='escalated' LIMIT 1", (session_id,)
+        "SELECT 1 FROM guard_failures AS failure WHERE session_id=? AND status='escalated' "
+        "AND NOT EXISTS (SELECT 1 FROM guard_resolutions AS resolution WHERE resolution.failure_key=failure.idempotency_key) LIMIT 1", (session_id,)
     ).fetchone()
     if escalated is not None:
         return {
@@ -423,7 +432,8 @@ def _derive_task_action(connection: sqlite3.Connection, session_id: str) -> dict
             },
         }
     blocked = connection.execute(
-        "SELECT 1 FROM guard_failures WHERE session_id=? AND status='blocked' LIMIT 1", (session_id,)
+        "SELECT 1 FROM guard_failures AS failure WHERE session_id=? AND status='blocked' "
+        "AND NOT EXISTS (SELECT 1 FROM guard_resolutions AS resolution WHERE resolution.failure_key=failure.idempotency_key) LIMIT 1", (session_id,)
     ).fetchone()
     if blocked is not None:
         return {
@@ -716,6 +726,10 @@ def restore(project_root: Path, session_id: str) -> dict[str, Any]:
             "SELECT idempotency_key, failure_key, guard, outcome, attempt, evidence_artifact, created_at "
             "FROM guard_outcomes WHERE session_id=? ORDER BY id", (session_id,)
         ).fetchall()
+        resolutions = connection.execute(
+            "SELECT failure_key, owner_direction, evidence_artifact, resolved_at FROM guard_resolutions "
+            "WHERE session_id=? ORDER BY resolved_at", (session_id,)
+        ).fetchall()
         lifecycle = connection.execute(
             "SELECT task_package, next_action, status, started_at, resumed_at FROM task_lifecycles WHERE session_id=?", (session_id,)
         ).fetchone()
@@ -735,6 +749,7 @@ def restore(project_root: Path, session_id: str) -> dict[str, Any]:
         "records": [{**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows],
         "guard_failures": [dict(row) for row in failures],
         "guard_outcomes": [dict(row) for row in outcomes],
+        "guard_resolutions": [dict(row) for row in resolutions],
         "lifecycle": lifecycle_payload,
         "socrates_chat": dict(socrates_chat) if socrates_chat is not None else None,
         "steps": [dict(row) for row in steps],
@@ -755,6 +770,8 @@ def _continuation_from_lifecycle(lifecycle: dict[str, Any]) -> dict[str, str]:
         return {"kind": "blocked", "reason": "guard-blocked", "recommended_action": "resolve-guard-blocker"}
     if status == "escalated":
         return {"kind": "escalated", "reason": "guard-escalated", "recommended_action": "provide-owner-direction"}
+    if status == "completed" and next_action == "archived":
+        return {"kind": "archived", "reason": "workflow-archived", "recommended_action": "start-next-task"}
     if status == "completed":
         return {"kind": "completed", "reason": "workflow-complete", "recommended_action": "archive-task"}
     if next_action == "awaiting-socrates-chat":
@@ -864,6 +881,108 @@ def _persist_guard_failure(
         return {"created": True, "failure": _guard_failure_payload(row), **action}
     finally:
         connection.close()
+
+
+def resolve_guard_failure(
+    project_root: Path,
+    session_id: str,
+    failure_key: str,
+    evidence_artifact: str,
+    owner_direction: str,
+) -> dict[str, Any]:
+    """Record an owner-authorized resolution and resume the preserved workflow step."""
+    if not all(_safe_identifier(value) for value in (session_id, failure_key)):
+        raise ValueError("Guard resolution is invalid")
+    if not _safe_path_reference(evidence_artifact) or not isinstance(owner_direction, str) or not owner_direction.strip():
+        raise ValueError("Guard resolution requires evidence and owner direction")
+    _reject_secret_fields({"owner_direction": owner_direction})
+    root = project_root.resolve()
+    artifact_path = (root / evidence_artifact).resolve()
+    if not artifact_path.is_file() or root not in artifact_path.parents:
+        raise ValueError("Guard resolution evidence artifact must exist below the project root")
+    connection = connect(root, create=False)
+    try:
+        _require_current_schema_connection(connection)
+        with connection:
+            chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
+            if chat is None or chat["status"] != "claimed":
+                raise PermissionError("Guard resolution requires a claimed separate Socrates chat")
+            failure = connection.execute(
+                "SELECT guard, incident_id, status FROM guard_failures WHERE idempotency_key=? AND session_id=?",
+                (failure_key, session_id),
+            ).fetchone()
+            if failure is None:
+                raise KeyError(failure_key)
+            if failure["status"] not in {"blocked", "escalated"}:
+                raise ValueError("Only blocked or escalated Guard failures may be resolved")
+            existing = connection.execute(
+                "SELECT 1 FROM guard_resolutions WHERE failure_key=?", (failure_key,)
+            ).fetchone()
+            created = existing is None
+            if created:
+                connection.execute(
+                    "INSERT INTO guard_resolutions(failure_key, session_id, owner_direction, evidence_artifact) VALUES (?, ?, ?, ?)",
+                    (failure_key, session_id, owner_direction.strip(), evidence_artifact),
+                )
+                connection.execute(
+                    "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, 'guard-resolved', 'orchestrator', 'guard-resolved', ?)",
+                    (session_id, json.dumps({"failure_key": failure_key, "guard": failure["guard"], "incident_id": failure["incident_id"], "owner_direction": owner_direction.strip(), "evidence_artifact": evidence_artifact}, ensure_ascii=False, sort_keys=True)),
+                )
+                connection.execute("UPDATE sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
+            action = _derive_task_action(connection, session_id)
+            connection.execute(
+                "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
+                (action["next_action"], action["status"], session_id),
+            )
+        return {"created": created, "failure_key": failure_key, "evidence_artifact": evidence_artifact, **action}
+    finally:
+        connection.close()
+
+
+def archive_completed_lifecycle(project_root: Path, session_id: str, reason: str) -> dict[str, str]:
+    """Record that a claimed Socrates task has moved to its recoverable archive."""
+    if not _safe_identifier(session_id) or not isinstance(reason, str) or not reason.strip():
+        raise ValueError("Task archive requires a session and reason")
+    _reject_secret_fields({"reason": reason})
+    connection = connect(project_root, create=False)
+    try:
+        _require_current_schema_connection(connection)
+        with connection:
+            _assert_archiveable_lifecycle(connection, session_id)
+            existing = connection.execute(
+                "SELECT 1 FROM records WHERE session_id=? AND kind='task-archived' LIMIT 1", (session_id,)
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, 'task-archived', 'orchestrator', 'task-archived', ?)",
+                    (session_id, json.dumps({"reason": reason.strip()}, ensure_ascii=False, sort_keys=True)),
+                )
+            connection.execute("UPDATE sessions SET status='archived', updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
+            connection.execute("UPDATE task_lifecycles SET next_action='archived' WHERE session_id=?", (session_id,))
+        return {"session_id": session_id, "status": "archived"}
+    finally:
+        connection.close()
+
+
+def archive_preflight(project_root: Path, session_id: str) -> None:
+    """Verify archive authority before the recoverable package move begins."""
+    if not _safe_identifier(session_id):
+        raise ValueError("Task archive requires a safe session")
+    connection = connect(project_root, create=False)
+    try:
+        _require_current_schema_connection(connection)
+        _assert_archiveable_lifecycle(connection, session_id)
+    finally:
+        connection.close()
+
+
+def _assert_archiveable_lifecycle(connection: sqlite3.Connection, session_id: str) -> None:
+    chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
+    lifecycle = connection.execute("SELECT status FROM task_lifecycles WHERE session_id=?", (session_id,)).fetchone()
+    if chat is None or chat["status"] != "claimed":
+        raise PermissionError("Task archive requires a claimed separate Socrates chat")
+    if lifecycle is None or lifecycle["status"] != "completed":
+        raise ValueError("Only a completed task lifecycle may be archived")
 
 
 def _guard_failure_payload(row: sqlite3.Row) -> dict[str, Any]:

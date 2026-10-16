@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from .harness import flush_guard_traces, resume_snapshot
-from .memory import activate_task_lifecycle, database_path, initialize, prepare_socrates_chat, record, require_current_schema
+from .memory import activate_task_lifecycle, archive_completed_lifecycle, archive_preflight, database_path, initialize, prepare_socrates_chat, record, require_current_schema
 from .identifiers import require_task_id, slugify
-from .task_specs import create_task, package_path, task_root, workflow_steps
+from .task_specs import archive_task as archive_task_package, archived_package_path, create_task, package_path, task_root, workflow_steps
 
 
 def work_router(project_root: Path, selector: str | None = None) -> dict[str, Any]:
@@ -117,6 +117,22 @@ def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:
     snapshot = resume_snapshot(root, metadata["id"])
     snapshot["socrates_chat_request"] = _socrates_chat_request(metadata["id"], metadata["title"])
     return snapshot
+
+
+def archive_completed_task(project_root: Path, task_id: str, reason: str) -> dict[str, str]:
+    """Move a completed package to the recoverable archive and record that transition."""
+    root = project_root.resolve()
+    archive_preflight(root, task_id)
+    active_package = package_path(root, task_id)
+    archived_package = archived_package_path(root, task_id)
+    if active_package.is_dir():
+        destination = archive_task_package(root, task_id, reason)
+    elif archived_package.is_dir():
+        destination = archived_package
+    else:
+        raise FileNotFoundError(f"Task package does not exist: {active_package}")
+    recorded = archive_completed_lifecycle(root, task_id, reason)
+    return {"package": str(destination), **recorded}
 
 
 def _socrates_chat_request(task_id: str, title: str) -> dict[str, str]:

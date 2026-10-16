@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .guards import guard_definition
-from .memory import _persist_guard_failure, advance_task_step
+from .memory import _persist_guard_failure, advance_task_step, resolve_guard_failure
 
 
 def record_guard_failure(
@@ -42,6 +42,13 @@ def transition_step(
 ) -> dict[str, Any]:
     """Advance the Socrates-owned durable checklist in declared workflow order."""
     return advance_task_step(project_root, session_id, step_id, status, closure_artifact, closure_reason)
+
+
+def resolve_guard(
+    project_root: Path, session_id: str, failure_key: str, evidence_artifact: str, owner_direction: str,
+) -> dict[str, Any]:
+    """Persist an owner direction after a terminal Guard cause has been addressed."""
+    return resolve_guard_failure(project_root, session_id, failure_key, evidence_artifact, owner_direction)
 
 
 def record_harness_signal(

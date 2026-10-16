@@ -107,6 +107,12 @@ the project's declared release action before it may complete the task. A Guard o
 missing delivery mechanism, or newly required scope/credential is an actionable
 blocker; routine commit, push, and release operations do not require separate approval.
 
+After `rollout` completes, the claimed Socrates chat uses `socrates archive` with an
+auditable reason. The package moves from `active` to `archived`; the router can then
+start the next task without mistaking completed work for an active lifecycle. A terminal
+Guard resumes only through `socrates resolve-guard`, with a fresh project-local evidence
+artifact and the owner's recorded direction.
+
 ## Guards and concrete failures
 
 When a declared Gate or concrete command fails, Socrates first writes an evidence
