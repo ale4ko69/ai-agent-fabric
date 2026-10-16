@@ -86,11 +86,39 @@ def _write_json_atomic(path: Path, value: dict[str, object]) -> None:
     temporary.replace(path)
 
 
-def _artifact_digests(package: Path) -> dict[str, str]:
-    return {
+def _artifact_digests(package: Path, research_baseline_sha256: str | None = None) -> dict[str, str]:
+    """Hash immutable planning inputs, accepting only line-appended runtime research.
+
+    A reviewed `research.md` remains part of the approval boundary.  Once it has
+    been reviewed, later execution observations may be appended on complete-line
+    boundaries, but cannot alter the reviewed prefix.
+    """
+    digests = {
         artifact: hashlib.sha256(_package_file(package, artifact).read_bytes()).hexdigest()
-        for artifact in ("spec.md", "research.md", "plan.md")
+        for artifact in ("spec.md", "plan.md")
     }
+    research_bytes = _package_file(package, "research.md").read_bytes()
+    full_digest = hashlib.sha256(research_bytes).hexdigest()
+    if research_baseline_sha256 is not None and full_digest != research_baseline_sha256:
+        for boundary in _line_boundaries(research_bytes):
+            if hashlib.sha256(research_bytes[:boundary]).hexdigest() == research_baseline_sha256:
+                full_digest = research_baseline_sha256
+                break
+    return {"spec.md": digests["spec.md"], "research.md": full_digest, "plan.md": digests["plan.md"]}
+
+
+def _line_boundaries(content: bytes) -> list[int]:
+    """Return every safe append boundary, including the unchanged full artifact."""
+    boundaries = [index + 1 for index, byte in enumerate(content) if byte == ord("\n")]
+    if len(content) not in boundaries:
+        boundaries.append(len(content))
+    return boundaries
+
+
+def _research_baseline_sha256(verdict: dict[str, object]) -> str | None:
+    digests = verdict.get("artifact_digests")
+    value = digests.get("research.md") if isinstance(digests, dict) else None
+    return value if isinstance(value, str) and len(value) == 64 else None
 
 
 def _task_metadata(task_id: str, title: str, work_class: str) -> str:
@@ -127,7 +155,7 @@ def create_task(project_root: Path, title: str, work_class: str, task_id: str | 
     _write(evidence / "README.md", "# Evidence\n\nStore durable verification evidence here.\n")
     if work_class == "planned":
         _write(package / "spec.md", f"# {title}\n\n## User Value\n\n## Scope\n\n## Non-Goals\n\n## Acceptance Criteria\n\n## Constraints\n\n## Open Questions\n")
-        _write(package / "research.md", f"# Research — {title}\n\n## Evidence\n\n## Options\n\n## Rejected approaches\n")
+        _write(package / "research.md", f"# Research — {title}\n\n## Evidence\n\n## Options\n\n## Rejected approaches\n\n## Runtime observations\n\nAppend execution evidence below this heading; do not edit the reviewed planning sections.\n")
         _write(package / "plan.md", f"# Plan — {title}\n\n## Analysis\n\n## Architecture\n\n## Implementation\n\n## Validation\n")
         artifact_digests = _artifact_digests(package)
         _write(package / "kepler.md", "# KEPLER verdict\n\nStatus: pending\n\n## Evidence reviewed\n\n## Scope boundary\n\n## Verdict\n")
@@ -283,10 +311,10 @@ def implementation_readiness(project_root: Path, task_id: str) -> dict[str, obje
         reasons.append("task.json workflow.spec_revision must be a positive integer")
     if type(plan_revision) is not int or plan_revision < 1:
         reasons.append("task.json workflow.plan_revision must be a positive integer")
-    current_digests = _artifact_digests(package)
     kepler_path = _package_file(package, "kepler.json")
     kepler = _load_json_object(kepler_path, "Kepler verdict", reasons)
     approval = _load_json_object(_package_file(package, "approval.json"), "approval", reasons)
+    current_digests = _artifact_digests(package, _research_baseline_sha256(kepler))
     if kepler:
         _validate_kepler_verdict(kepler, spec_revision, plan_revision, current_digests, reasons)
     if approval:
@@ -379,11 +407,12 @@ def approval_preview(project_root: Path, task_id: str) -> dict[str, object]:
         raise ValueError("task.json must declare workflow revisions")
     spec_revision = workflow.get("spec_revision")
     plan_revision = workflow.get("plan_revision")
-    digests = _artifact_digests(package)
     kepler_path = _package_file(package, "kepler.json")
     reasons: list[str] = []
+    kepler = _load_json_object(kepler_path, "Kepler verdict")
+    digests = _artifact_digests(package, _research_baseline_sha256(kepler))
     _validate_kepler_verdict(
-        _load_json_object(kepler_path, "Kepler verdict"), spec_revision, plan_revision, digests, reasons
+        kepler, spec_revision, plan_revision, digests, reasons
     )
     if reasons:
         raise ValueError("Cannot approve planned work: " + "; ".join(reasons))
