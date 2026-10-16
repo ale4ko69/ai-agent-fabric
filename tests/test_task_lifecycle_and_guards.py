@@ -12,10 +12,10 @@ from unittest import mock
 
 from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
-from ai_agent_fabric.entrypoints import recover_unicode_package, restore_picker, restore_task, start_task
+from ai_agent_fabric.entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_task, work_router
 from ai_agent_fabric.harness import flush_guard_traces, record_checkpoint
 from ai_agent_fabric.memory import claim_socrates_chat, initialize
-from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, transition_step
+from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
@@ -444,6 +444,66 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             {"kind": "completed", "reason": "workflow-complete", "recommended_action": "archive-task"},
         )
 
+    def test_owner_direction_resolves_an_escalated_guard_without_rewriting_history(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        evidence_root = self.project / "docs/specs/active/example-task/evidence"
+        failure_keys = []
+        for attempt in range(1, 4):
+            artifact = evidence_root / f"command-{attempt}.md"
+            artifact.write_text(f"# command attempt {attempt}\n", encoding="utf-8")
+            failure_key = f"command-failure-{attempt}"
+            failure_keys.append(failure_key)
+            result = record_guard_failure(
+                self.project, "example-task", failure_key, "command-incident", "command",
+                f"docs/specs/active/example-task/evidence/command-{attempt}.md", self.home,
+            )
+        self.assertEqual(result["status"], "escalated")
+        resolution = evidence_root / "command-resolved.md"
+        resolution.write_text("# Cause resolved\n", encoding="utf-8")
+
+        resumed = resolve_guard(
+            self.project, "example-task", failure_keys[-1],
+            "docs/specs/active/example-task/evidence/command-resolved.md",
+            "continue-after-repaired-command",
+        )
+
+        self.assertTrue(resumed["created"])
+        self.assertEqual(resumed["status"], "active")
+        self.assertEqual(resumed["next_action"], "intake")
+        restored = restore_task(self.project, "example-task")
+        self.assertEqual(restored["memory"]["guard_failures"][-1]["status"], "escalated")
+        self.assertEqual(restored["memory"]["guard_resolutions"][0]["failure_key"], failure_keys[-1])
+        self.assertEqual(restored["memory"]["lifecycle"]["continuation"], {"kind": "resume", "step_id": "intake"})
+
+    def test_archive_completed_task_unblocks_new_task_routing(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        evidence_root = self.project / "docs/specs/active/example-task/evidence"
+        for step in ("intake", "evidence", "implementation", "review", "validation", "close-out", "rollout"):
+            artifact = evidence_root / f"{step}.md"
+            artifact.write_text(f"# {step}\n", encoding="utf-8")
+            transition_step(
+                self.project, "example-task", step, "done",
+                f"docs/specs/active/example-task/evidence/{step}.md", f"{step}-complete",
+            )
+
+        archived = archive_completed_task(self.project, "example-task", "delivery-complete")
+
+        self.assertEqual(archived["status"], "archived")
+        self.assertFalse((self.project / "docs/specs/active/example-task").exists())
+        self.assertTrue((self.project / "docs/specs/archived/example-task").is_dir())
+        self.assertEqual(work_router(self.project)["route"], "start")
+        restored = initialize(self.project)
+        self.assertEqual(restored, self.project / ".agent-fabric/memory.db")
+
+    def test_archive_rejects_an_incomplete_task_without_moving_its_package(self) -> None:
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        with self.assertRaisesRegex(PermissionError, "claimed separate Socrates chat"):
+            archive_completed_task(self.project, "example-task", "not-complete")
+        self.assertTrue((self.project / "docs/specs/active/example-task").is_dir())
+        self.assertFalse((self.project / "docs/specs/archived/example-task").exists())
+
     def test_schema_migration_resumes_a_legacy_pending_internal_step(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
         claim_socrates_chat(self.project, "example-task", "socrates-example-task")
@@ -491,6 +551,12 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         restored = restore_task(self.project, "example-task")
         self.assertEqual(restored["memory"]["steps"][-1]["step_id"], "rollout")
         self.assertEqual(restored["memory"]["steps"][-1]["status"], "pending")
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
+            self.assertIsNotNone(connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='guard_resolutions'").fetchone())
+        finally:
+            connection.close()
 
     def test_socrates_rejects_closing_a_step_without_evidence_and_reason(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")

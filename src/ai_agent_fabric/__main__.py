@@ -14,9 +14,9 @@ from .environment import detect_environment
 from .memory import acknowledge_result, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
 from .task_specs import approve_planned_task, approval_preview, archive_task, create_task, implementation_readiness, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
-from .entrypoints import recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
+from .entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
-from .socrates import record_guard_failure, record_harness_signal, transition_step
+from .socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
 
 
 def main() -> None:
@@ -112,6 +112,20 @@ def main() -> None:
     socrates_claim.add_argument("--thread-id", required=True)
     socrates_claim.add_argument("--home", type=Path, default=default_fabric_home())
     socrates_claim.add_argument("--json", action="store_true")
+    socrates_resolve_guard = socrates_sub.add_parser("resolve-guard", help="Record owner direction resolving one blocked or escalated Guard")
+    socrates_resolve_guard.add_argument("target", type=Path)
+    socrates_resolve_guard.add_argument("--session", required=True)
+    socrates_resolve_guard.add_argument("--failure-key", required=True)
+    socrates_resolve_guard.add_argument("--artifact", required=True, help="Existing project-relative evidence for the resolved cause")
+    socrates_resolve_guard.add_argument("--owner-direction", required=True, help="Auditable, non-secret owner direction")
+    socrates_resolve_guard.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_resolve_guard.add_argument("--json", action="store_true")
+    socrates_archive = socrates_sub.add_parser("archive", help="Move one completed task package to the recoverable archive")
+    socrates_archive.add_argument("target", type=Path)
+    socrates_archive.add_argument("--session", required=True)
+    socrates_archive.add_argument("--reason", required=True)
+    socrates_archive.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_archive.add_argument("--json", action="store_true")
     socrates_signal = socrates_sub.add_parser("signal", help="Record one Socrates-owned Harness signal")
     socrates_signal.add_argument("target", type=Path)
     socrates_signal.add_argument("--category", required=True, choices=("user-correction", "agent-drift", "missed-instruction", "scope-violation", "memory-gap", "repeated-failure", "security-concern", "friction"))
@@ -344,6 +358,14 @@ def main() -> None:
         require_bound_project(args.target, args.home)
         result = claim_socrates_chat(args.target.resolve(), args.session, args.thread_id)
         flush_guard_traces(args.target)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "resolve-guard":
+        require_bound_project(args.target, args.home)
+        result = resolve_guard(args.target.resolve(), args.session, args.failure_key, args.artifact, args.owner_direction)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "archive":
+        require_bound_project(args.target, args.home)
+        result = archive_completed_task(args.target.resolve(), args.session, args.reason)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "socrates" and args.socrates_command == "signal":
         require_bound_project(args.target, args.home)

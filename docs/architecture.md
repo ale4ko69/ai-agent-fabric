@@ -82,7 +82,11 @@ state. A successor internal step is marked `in-progress` before the transition r
 it cannot remain a merely descriptive pending `next_action`. The only non-running
 outcomes are `awaiting-owner-approval`, Guard-derived `blocked` or `escalated`, and
 `completed`. Each non-running result includes a bounded reason and a recommended next
-action so a task never silently waits for the owner to discover its state.
+action so a task never silently waits for the owner to discover its state. An owner
+direction after a terminal Guard is a separate, evidenced resolution record: it never
+rewrites the original failure or policy outcome, and only then resumes the preserved
+workflow step. A completed task is moved through the portable Socrates archive action,
+which keeps its package recoverable and allows routing to the next task.
 
 The matching project-local request envelope keeps delegation scope as references to
 task artifacts rather than copying mutable prompt text. See [delegation contract](delegation.md).

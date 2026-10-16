@@ -61,6 +61,21 @@ pinned by the project. The recorder cannot supply its own taxonomy or retry poli
 When `harness checkpoint` fails, it automatically records the pinned `checkpoint`
 Guard using its required session, failure id, and pre-written evidence artifact.
 
+## Owner-authorized recovery
+
+After the documented cause of a `block` or `escalate` outcome is addressed, the
+claimed Socrates chat records the owner direction and fresh project-local evidence:
+
+```bash
+ai-agent-fabric socrates resolve-guard /path/to/project \
+  --session <task-id> --failure-key <failure-key> \
+  --artifact docs/specs/active/<task-id>/evidence/guard-resolved.md \
+  --owner-direction <safe-summary> --json
+```
+
+This creates an immutable resolution record; it does not edit the original Guard
+failure or outcome. The lifecycle then resumes its already-preserved current step.
+
 ## Interrupted trace delivery
 
 The database transaction writes both the failure/outcome and an identifier-only pending
