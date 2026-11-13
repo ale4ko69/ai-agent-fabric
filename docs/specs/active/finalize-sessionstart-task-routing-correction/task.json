@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "id": "finalize-sessionstart-task-routing-correction",
+  "title": "Finalize SessionStart task-routing correction",
+  "work_class": "small-bug",
+  "status": "active",
+  "tracker": {
+    "provider": "none",
+    "reference": null,
+    "url": null
+  },
+  "workflow": {
+    "schema_version": 1,
+    "spec_revision": 1,
+    "plan_revision": 1
+  }
+}
