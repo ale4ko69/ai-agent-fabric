@@ -1,7 +1,7 @@
 {
   "client": "codex",
   "enabled_packs": [],
-  "fabric_release": "0.1.27",
+  "fabric_release": "0.1.29",
   "profile": ".agent-fabric/profile.json",
   "project_overlay": ".agent-fabric/project-overlay.md",
   "schema_version": 1
