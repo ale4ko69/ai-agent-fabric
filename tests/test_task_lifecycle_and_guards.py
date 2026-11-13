@@ -149,6 +149,9 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "SessionStart")
         self.assertIn("hook-task", context)
         self.assertIn("Hook task", context)
+        self.assertIn("Restore an existing task only when it matches the user's current request", context)
+        self.assertIn("an unrelated active task must not prevent new authorized work", context)
+        self.assertIn("If the request is ambiguous, ask which task to continue", context)
         restored = restore_task(self.project, "hook-task")
         self.assertEqual([record["kind"] for record in restored["memory"]["records"]], ["task-started"])
 
