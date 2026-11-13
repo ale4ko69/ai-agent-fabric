@@ -21,7 +21,15 @@
     "kepler_verdict_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
     "approved": {"type": "boolean"},
     "approved_by": {"enum": ["human", null]},
-    "approval_method": {"enum": ["interactive-terminal", null]},
-    "approved_at": {"type": ["string", "null"], "format": "date-time"}
-  }
+    "approval_method": {"enum": ["interactive-terminal", "agent-attested-chat", null]},
+    "approved_at": {"type": ["string", "null"], "format": "date-time"},
+    "task_id": {"type": "string", "minLength": 1},
+    "chat_reference": {"type": "string", "minLength": 1, "maxLength": 256},
+    "expires_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {"if": {"properties": {"approval_method": {"const": "agent-attested-chat"}}},
+     "then": {"required": ["task_id", "chat_reference", "expires_at"]},
+     "else": {"not": {"anyOf": [{"required": ["task_id"]}, {"required": ["chat_reference"]}, {"required": ["expires_at"]}]}}}
+  ]
 }

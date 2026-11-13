@@ -42,6 +42,7 @@ ai-agent-fabric spec validate <project> <task-id>
 ai-agent-fabric spec readiness <project> <task-id> --json
 ai-agent-fabric spec approve <project> <task-id> --preview
 ai-agent-fabric spec approve <project> <task-id>
+ai-agent-fabric spec attest-chat-approval <project> <task-id> --reviewed-kepler-sha256 <hash> --chat-reference <reference>
 ```
 
 Use `--id` when a project already has a stable task identifier. A new command refuses
@@ -82,9 +83,13 @@ reviewed prefix, or any edit to `spec.md` or `plan.md`, makes the package not re
 until a fresh review and approval. `spec approve` first offers a non-mutating preview, then requires a person at
 an interactive TTY to type a confirmation containing the previewed Kepler-verdict hash.
 If any reviewed artifact changes while the person is deciding, the command fails closed
-and requires a new preview. This is a controlled workflow confirmation, not a
-cryptographic identity system; a future signed external approval adapter would be a
-separate, project-specific integration.
+and requires a new preview. Alternatively, after presenting the exact preview in the
+owner's chat and receiving the owner's explicit decision for that package, Socrates
+may record it with `spec attest-chat-approval`. This is a temporary agent-attested
+personal-use mode: the chat reference is an agent assertion and is not independently
+authenticated. It binds the task and reviewed artifacts and verdict, and expires after
+24 hours. It does not approve a different task or permit automatic approval. Retain
+terminal approvals as before. A passkey-backed verifier is a later stage.
 
 Kepler may record an out-of-scope finding only as `backlog` or `amendment-request`.
 The latter requires the owner to amend the spec, then a revised plan and a new Kepler

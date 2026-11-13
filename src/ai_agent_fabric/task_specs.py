@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PureWindowsPath
 
 from .project_state import state_path
@@ -318,7 +318,7 @@ def implementation_readiness(project_root: Path, task_id: str) -> dict[str, obje
     if kepler:
         _validate_kepler_verdict(kepler, spec_revision, plan_revision, current_digests, reasons)
     if approval:
-        _validate_approval(approval, spec_revision, plan_revision, current_digests, _sha256_file(kepler_path), reasons)
+        _validate_approval(approval, spec_revision, plan_revision, current_digests, _sha256_file(kepler_path), reasons, metadata["id"])
     return {
         "task_id": metadata["id"],
         "work_class": work_class,
@@ -370,8 +370,11 @@ def _validate_kepler_verdict(verdict: dict[str, object], spec_revision: object, 
         reasons.append("A requested spec amendment requires a revised plan and fresh Kepler verdict")
 
 
-def _validate_approval(approval: dict[str, object], spec_revision: object, plan_revision: object, artifact_digests: dict[str, str], kepler_sha256: str, reasons: list[str]) -> None:
+def _validate_approval(approval: dict[str, object], spec_revision: object, plan_revision: object, artifact_digests: dict[str, str], kepler_sha256: str, reasons: list[str], task_id: str) -> None:
     required = {"schema_version", "spec_revision", "plan_revision", "artifact_digests", "kepler_verdict_sha256", "approved", "approved_by", "approval_method", "approved_at"}
+    method = approval.get("approval_method")
+    if method == "agent-attested-chat":
+        required |= {"task_id", "chat_reference", "expires_at"}
     if set(approval) != required or type(approval.get("schema_version")) is not int or approval["schema_version"] != 1:
         reasons.append("approval.json must use the declared approval shape")
         return
@@ -387,10 +390,21 @@ def _validate_approval(approval: dict[str, object], spec_revision: object, plan_
     if (
         approval.get("approved") is not True
         or approval.get("approved_by") != "human"
-        or approval.get("approval_method") != "interactive-terminal"
+        or method not in {"interactive-terminal", "agent-attested-chat"}
         or not isinstance(approval.get("approved_at"), str)
     ):
         reasons.append("Planned work requires explicit human approval")
+    if method == "agent-attested-chat":
+        if approval.get("task_id") != task_id or not isinstance(approval.get("chat_reference"), str) or not approval["chat_reference"].strip():
+            reasons.append("Chat approval must identify the current task and source chat")
+        try:
+            approved_at = datetime.fromisoformat(str(approval.get("approved_at")).replace("Z", "+00:00"))
+            expires_at = datetime.fromisoformat(str(approval.get("expires_at")).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            if approved_at.tzinfo is None or expires_at.tzinfo is None or approved_at > now or expires_at <= now or expires_at <= approved_at or expires_at - approved_at > timedelta(hours=24):
+                raise ValueError
+        except (ValueError, OverflowError):
+            reasons.append("Chat approval is expired or has invalid validity dates")
 
 
 def approval_preview(project_root: Path, task_id: str) -> dict[str, object]:
@@ -423,7 +437,7 @@ def approval_preview(project_root: Path, task_id: str) -> dict[str, object]:
         "artifact_digests": digests,
         "kepler_verdict_sha256": _sha256_file(kepler_path),
         "approval_path": str(_package_file(package, "approval.json")),
-        "prompt": "A human must confirm this exact reviewed package in the terminal; no automated approval flag exists.",
+        "prompt": "Present this exact reviewed package for explicit owner approval; terminal and agent-attested chat methods are available.",
     }
 
 
@@ -446,6 +460,28 @@ def approve_planned_task(project_root: Path, task_id: str, confirmation: str, re
         "approved_by": "human",
         "approval_method": "interactive-terminal",
         "approved_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
+    path = Path(str(preview["approval_path"]))
+    _write_json_atomic(path, approval)
+    return path
+
+
+def attest_chat_approval(project_root: Path, task_id: str, reviewed_kepler_sha256: str, chat_reference: str) -> Path:
+    """Record an agent assertion, not a verified or signed owner identity."""
+    if not isinstance(chat_reference, str) or not chat_reference.strip() or len(chat_reference) > 256 or any(c in chat_reference for c in "\r\n"):
+        raise ValueError("A short source chat reference is required")
+    preview = approval_preview(project_root, task_id)
+    if reviewed_kepler_sha256 != preview["kepler_verdict_sha256"]:
+        raise ValueError("The reviewed package changed after preview; inspect and approve it again")
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    approval = {
+        "schema_version": 1, "task_id": preview["task_id"],
+        "spec_revision": preview["spec_revision"], "plan_revision": preview["plan_revision"],
+        "artifact_digests": preview["artifact_digests"], "kepler_verdict_sha256": preview["kepler_verdict_sha256"],
+        "approved": True, "approved_by": "human", "approval_method": "agent-attested-chat",
+        "chat_reference": chat_reference.strip(),
+        "approved_at": now.isoformat().replace("+00:00", "Z"),
+        "expires_at": (now + timedelta(hours=24)).isoformat().replace("+00:00", "Z"),
     }
     path = Path(str(preview["approval_path"]))
     _write_json_atomic(path, approval)

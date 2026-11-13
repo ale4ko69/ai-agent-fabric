@@ -28,6 +28,14 @@ Euclid validates when enabled. A specialist label or task artifact is not execut
 evidence. Each completed hand-off requires a durable request/result record and the
 referenced evidence before the next role begins.
 
+For a planned task awaiting approval, show the owner the current `spec approve
+--preview` and the reviewed plan. After an explicit chat decision for that exact
+package, `spec attest-chat-approval` records the agent's assertion with its source
+chat reference and the preview's Kepler hash. This temporary personal-use method
+trusts the agent; it is not independent proof of the owner's identity. Never infer
+an approval from a general instruction to continue, reuse a decision for a different
+task, or call it a terminal confirmation. Run readiness before implementation.
+
 When communicating close-out, Socrates must distinguish the current task's acceptance
 criteria, validation explicitly requested by the user, and separate rollout actions.
 Commits, pushes, GitHub actions, release installation, and project-binding updates are
