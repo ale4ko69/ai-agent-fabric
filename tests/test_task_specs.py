@@ -1,9 +1,11 @@
 from pathlib import Path
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 
-from ai_agent_fabric.task_specs import approve_planned_task, approval_preview, create_task, implementation_readiness, slugify, validate_task
+from ai_agent_fabric.task_specs import approve_planned_task, approval_preview, attest_chat_approval, create_task, implementation_readiness, slugify, validate_task
 from ai_agent_fabric.distribution import install_release, onboard_project
 
 
@@ -85,3 +87,87 @@ class TaskSpecsTest(unittest.TestCase):
             research_path.write_text(research_path.read_text(encoding="utf-8").replace("## Evidence", "## Changed evidence", 1), encoding="utf-8")
             reasons = implementation_readiness(project, "add-account-export")["reasons"]
             self.assertIn("Kepler verdict does not match the current spec, research, and plan content", reasons)
+
+    def test_unrecognized_chat_approval_cannot_bypass_the_terminal_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = bound_project(Path(directory))
+            package = create_task(project, "Add account export", "planned")
+            kepler_path = package / "kepler.json"
+            kepler = json.loads(kepler_path.read_text(encoding="utf-8"))
+            kepler["verdict"] = "advice"
+            kepler_path.write_text(json.dumps(kepler), encoding="utf-8")
+            preview = approval_preview(project, "add-account-export")
+            digest = str(preview["kepler_verdict_sha256"])
+            approval_path = approve_planned_task(project, "add-account-export", f"approve add-account-export {digest}", digest)
+            self.assertTrue(implementation_readiness(project, "add-account-export")["ready"])
+
+            approval = json.loads(approval_path.read_text(encoding="utf-8"))
+            approval["approval_method"] = "owner-chat"
+            approval_path.write_text(json.dumps(approval), encoding="utf-8")
+            result = implementation_readiness(project, "add-account-export")
+            self.assertFalse(result["ready"])
+            self.assertIn("Planned work requires explicit human approval", result["reasons"])
+
+    def test_changed_kepler_verdict_invalidates_terminal_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = bound_project(Path(directory))
+            package = create_task(project, "Add account export", "planned")
+            kepler_path = package / "kepler.json"
+            kepler = json.loads(kepler_path.read_text(encoding="utf-8"))
+            kepler["verdict"] = "advice"
+            kepler_path.write_text(json.dumps(kepler), encoding="utf-8")
+            digest = str(approval_preview(project, "add-account-export")["kepler_verdict_sha256"])
+            approve_planned_task(project, "add-account-export", f"approve add-account-export {digest}", digest)
+            self.assertTrue(implementation_readiness(project, "add-account-export")["ready"])
+
+            kepler["out_of_scope_disposition"] = "backlog"
+            kepler_path.write_text(json.dumps(kepler), encoding="utf-8")
+            result = implementation_readiness(project, "add-account-export")
+            self.assertFalse(result["ready"])
+            self.assertIn("Approval does not match the current task artifacts and Kepler verdict", result["reasons"])
+
+    def test_agent_attested_chat_is_task_bound_and_expires(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = bound_project(Path(directory))
+            package = create_task(project, "Add account export", "planned")
+            kepler_path = package / "kepler.json"
+            kepler = json.loads(kepler_path.read_text(encoding="utf-8"))
+            kepler["verdict"] = "advice"
+            kepler_path.write_text(json.dumps(kepler), encoding="utf-8")
+            digest = str(approval_preview(project, "add-account-export")["kepler_verdict_sha256"])
+            with self.assertRaisesRegex(ValueError, "changed after preview"):
+                attest_chat_approval(project, "add-account-export", "0" * 64, "chat:123")
+            approval_path = attest_chat_approval(project, "add-account-export", digest, "chat:123")
+            self.assertTrue(implementation_readiness(project, "add-account-export")["ready"])
+            approval = json.loads(approval_path.read_text(encoding="utf-8"))
+            self.assertEqual(approval["approval_method"], "agent-attested-chat")
+            approval["task_id"] = "another-task"
+            approval_path.write_text(json.dumps(approval), encoding="utf-8")
+            self.assertFalse(implementation_readiness(project, "add-account-export")["ready"])
+            approval["task_id"] = "add-account-export"
+            approval["expires_at"] = "2000-01-01T00:00:00Z"
+            approval_path.write_text(json.dumps(approval), encoding="utf-8")
+            self.assertFalse(implementation_readiness(project, "add-account-export")["ready"])
+            attest_chat_approval(project, "add-account-export", digest, "chat:123")
+            with (package / "plan.md").open("a", encoding="utf-8") as handle:
+                handle.write("Changed scope\n")
+            self.assertFalse(implementation_readiness(project, "add-account-export")["ready"])
+
+    def test_chat_approval_cli_records_decision_for_bound_project(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = bound_project(root)
+            package = create_task(project, "Add account export", "planned")
+            kepler_path = package / "kepler.json"
+            kepler = json.loads(kepler_path.read_text(encoding="utf-8"))
+            kepler["verdict"] = "advice"
+            kepler_path.write_text(json.dumps(kepler), encoding="utf-8")
+            digest = str(approval_preview(project, "add-account-export")["kepler_verdict_sha256"])
+            result = subprocess.run(
+                [sys.executable, str(SOURCE_ROOT / "scripts/run-fabric.py"), "spec", "attest-chat-approval",
+                 str(project), "add-account-export", "--reviewed-kepler-sha256", digest,
+                 "--chat-reference", "chat:123", "--home", str(root / "fabric-home")],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(implementation_readiness(project, "add-account-export")["ready"])

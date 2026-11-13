@@ -12,7 +12,7 @@ from .bootstrap import bash_install_plan, install_bash
 from .installer import load_project_profile, resolve_project_command
 from .environment import detect_environment
 from .memory import acknowledge_result, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
-from .task_specs import approve_planned_task, approval_preview, archive_task, create_task, implementation_readiness, validate_task
+from .task_specs import approve_planned_task, approval_preview, archive_task, attest_chat_approval, create_task, implementation_readiness, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
 from .entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
@@ -163,6 +163,12 @@ def main() -> None:
     spec_approve.add_argument("--home", type=Path, default=default_fabric_home())
     spec_approve.add_argument("--preview", action="store_true")
     spec_approve.add_argument("--json", action="store_true")
+    spec_chat = spec_sub.add_parser("attest-chat-approval", help="Record the agent's assertion of a specific owner chat decision")
+    spec_chat.add_argument("target", type=Path)
+    spec_chat.add_argument("task_id")
+    spec_chat.add_argument("--reviewed-kepler-sha256", required=True)
+    spec_chat.add_argument("--chat-reference", required=True)
+    spec_chat.add_argument("--home", type=Path, default=default_fabric_home())
     spec_archive = spec_sub.add_parser("archive")
     spec_archive.add_argument("target", type=Path)
     spec_archive.add_argument("task_id")
@@ -403,6 +409,9 @@ def main() -> None:
             )
             path = approve_planned_task(args.target, args.task_id, confirmation, reviewed_sha256)
             print(path)
+    elif args.command == "spec" and args.spec_command == "attest-chat-approval":
+        require_bound_project(args.target, args.home)
+        print(attest_chat_approval(args.target, args.task_id, args.reviewed_kepler_sha256, args.chat_reference))
     elif args.command == "spec" and args.spec_command == "archive":
         require_bound_project(args.target, args.home)
         print(archive_task(args.target, args.task_id, args.reason))
