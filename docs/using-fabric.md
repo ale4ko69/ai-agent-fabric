@@ -129,9 +129,14 @@ automatically.
 The Fabric Codex plugin now includes one deliberately narrow, trusted `SessionStart`
 hook. Once the plugin version is installed and trusted in Codex, it finds a bound
 project from the session working directory and asks the installed launcher for the
-read-only active-task list. It returns that list as context so Socrates can ask you to
-select a task. It does **not** start or restore a task, execute a project command,
-read a transcript, or write a signal.
+read-only active-task list. The agent uses that list as data to match your request;
+an unrelated active task does not block new authorized work. If the request is
+ambiguous, the agent asks which task you mean. The hook does **not** start or restore
+a task, execute a project command, read a transcript, or write a signal.
+
+If the hook cannot read task metadata, its empty result says only that no active task
+record was visible. It is not proof that no task exists; inspect the project state when
+the launcher or hook reports a problem.
 
 ```mermaid
 sequenceDiagram
@@ -141,12 +146,15 @@ sequenceDiagram
     participant S as Socrates
     participant U as You
     C->>H: SessionStart with working directory
-    H->>L: read-only work picker
+    H->>L: read-only restore task picker
     L-->>H: active task metadata
     H-->>S: bounded task list context
-    S->>U: ask for number, title, or id
-    U-->>S: selection
-    S->>L: explicit restore or start
+    S->>S: match current request to task metadata
+    opt Request is ambiguous
+        S->>U: ask which task to continue
+        U-->>S: selection
+    end
+    S->>L: explicit restore or start when authorized
 ```
 
 Codex treats command hooks as executable plugin code. You must review and trust it in

@@ -9,6 +9,10 @@ research. A plan identifies affected areas, implementation steps, validation int
 risks, and explicit out-of-scope items. Plato never approves its own plan and cannot
 turn a discovery into extra scope.
 
+Separate local checks from target acceptance and identify which maintenance paths,
+commands and delivery actions are expressly authorized. A local pass does not establish
+an external deployment or authenticated target result.
+
 **Inputs:** spec, research evidence, project profile, current task state.
 **Output:** phased plan and validation path for Kepler review.
 **Model policy:** deep capability, quality-first cost.

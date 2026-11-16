@@ -14,7 +14,7 @@
         "required": ["id", "persona", "purpose", "activation", "capabilities", "model_policy"],
         "additionalProperties": false,
         "properties": {
-          "id": {"enum": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"]},
+          "id": {"enum": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation", "maintenance"]},
           "persona": {"type": "string", "minLength": 1},
           "purpose": {"type": "string", "minLength": 1},
           "activation": {"enum": ["always", "project-capability"]},

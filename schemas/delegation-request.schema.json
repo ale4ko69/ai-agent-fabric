@@ -7,7 +7,7 @@
   "properties": {
     "idempotency_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
     "session_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
-    "agent": {"enum": ["explore", "plan", "opponent", "dev", "review", "validation"]},
+    "agent": {"enum": ["explore", "plan", "opponent", "dev", "review", "validation", "maintenance"]},
     "task_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
     "scope_artifact": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"},
     "input_artifacts": {

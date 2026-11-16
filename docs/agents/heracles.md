@@ -9,6 +9,12 @@ capabilities before choosing commands, and reports structured artifacts, finding
 exceptions through the durable outbox. It stops on a material scope gap rather than
 implementing a related improvement on its own.
 
+Before editing, inspect the file's current contents and any existing changes. Preserve
+the owner's and other agents' edits. If an edit conflicts with changed content, stop
+work on that file, report the conflict and agree on a resolution; do not silently
+overwrite, revert or reset someone else's work. This instruction does not guarantee
+atomic protection against every concurrent write.
+
 Heracles implements only mechanisms classified as `baseline` or explicitly activated
 for the selected project. It must not treat an excluded source artifact as a missing
 feature, even when it appears adjacent to a portable mechanism in an inventory.

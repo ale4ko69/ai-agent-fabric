@@ -10,7 +10,7 @@ from .project_state import state_path
 
 
 REQUIREMENT_VALUES = {"required", "optional", "forbidden"}
-PACKS = {"documentation", "ui-ux", "ui-verification", "validation", "knowledge-publication"}
+PACKS = {"documentation", "ui-ux", "ui-verification", "validation", "knowledge-publication", "maintenance"}
 
 
 def validate_capabilities(config: dict[str, Any]) -> None:

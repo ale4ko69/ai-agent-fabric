@@ -8,7 +8,7 @@
     "idempotency_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
     "request_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
     "session_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$"},
-    "agent": {"enum": ["explore", "plan", "opponent", "dev", "review", "validation"]},
+    "agent": {"enum": ["explore", "plan", "opponent", "dev", "review", "validation", "maintenance"]},
     "summary": {"type": "string", "minLength": 1},
     "artifacts": {
       "type": "array",

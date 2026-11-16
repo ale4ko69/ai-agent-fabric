@@ -36,8 +36,9 @@ API. Codex Cloud orchestration does not execute this local/plugin command hook.
 See [client-adapter evidence](client-adapter-evidence.md) and the operator explanation
 in [Using Fabric](using-fabric.md).
 
-The selected project model-routing configuration chooses affordable models per role.
-It may affect what work an agent performs, but it cannot create a hook, expose a
+The selected project model-routing configuration declares capability and cost policies
+per role; the current runtime validates them but does not select a provider model or
+look up live prices. Client configuration may use those policies, but they cannot create a hook, expose a
 different project's memory, or override an adapter's declared capability. Without an
 adapter hook, the task-local Socrates workflow invokes the launcher to record the same
 project-local Harness signals manually. Specialists return evidence to Socrates; they

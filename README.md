@@ -8,6 +8,48 @@ keeps its own profile, tasks, memory, Harness data, and integration settings.
 Fabric is not a global project database or a replacement for a team's tracker. One
 project never reads another project's task state, memory, or retrospective signals.
 
+## Why use Fabric?
+
+- **Resume work with evidence:** project-local task packages and memory retain the
+  plan, decisions, specialist results and recovery state.
+- **Coordinate a bounded team:** Socrates orchestrates defined roles with
+  independent planning, challenge, implementation and review responsibilities.
+- **Keep projects separate:** each project pins a release and keeps its own profile,
+  tasks, Harness signals and credentials outside the shared runtime.
+- **Inspect changes before applying them:** versioned installation, project binding,
+  client delivery and updates have explicit previews and recovery paths.
+- **Work across supported clients:** local Codex, Copilot CLI and Claude Code use
+  client-specific adapters and the same portable project contracts.
+
+## Quick start
+
+For a first installation from a source checkout with Python 3.10 or later, inspect and
+install the versioned release, then preview and enable the selected client adapter:
+
+```bash
+python scripts/run-fabric.py distribution install-release . --preview
+python scripts/run-fabric.py distribution install-release .
+ai-agent-fabric distribution enable-client codex --preview
+ai-agent-fabric distribution enable-client codex
+```
+
+Review each preview before the corresponding write. Replace `codex` with `copilot`
+or `claude` for the supported client surface. After installation, use the global
+launcher to inspect and explicitly bind a target project:
+
+```bash
+ai-agent-fabric project status /path/to/project --json
+ai-agent-fabric project init /path/to/project --client codex --preview
+ai-agent-fabric project init /path/to/project --client codex
+```
+
+The global launcher must be available on your shell's path. On Windows without a
+configured Bash launcher, use the installed Python launcher named in the Fabric
+bootstrap. See [installation and project binding](#install-and-bind-a-project) for
+the client and ownership boundaries. For an existing installation, check the
+[cross-version installer limitation](docs/global-distribution.md#release-layout)
+before upgrading.
+
 ## At a glance
 
 ```text
@@ -36,6 +78,10 @@ companions are in [`docs/agents`](docs/agents/README.md).
 | Dev | Heracles | Implements approved, bounded changes. |
 | Review | Athena | Reviews changed work against acceptance criteria and evidence. |
 | Validation | Euclid | Validates enabled project contracts and assertions. |
+| Maintenance | Metis | Optionally inspects project-local maintenance; Socrates invokes the bounded apply action. |
+
+The optional Metis profile and maintenance commands shown here describe this source
+tree; a bound project has only the capabilities in its pinned installed release.
 
 Socrates is the sole durable-memory writer. Specialists receive a bounded delegation
 contract and return typed findings and artifact references; Socrates persists and
@@ -53,8 +99,8 @@ global launcher            ---- commands ------> docs/specs/ task packages
                                                     .agent-fabric/harness/
 ```
 
-The core contains no client identifiers, credentials, machine paths, services, tracker
-rules, or target-repository facts. Those belong only to the target's local profile and
+The core contains no customer-specific identifiers, credentials, machine paths,
+services, tracker rules, or target-repository facts. Those belong only to the target's local profile and
 selected adapter. See [architecture](docs/architecture.md) and
 [project profiles](docs/project-profile.md).
 
@@ -134,14 +180,14 @@ request; `restore` returns its saved chat binding or a request to create it.
 
 ## Install and bind a project
 
-From a development checkout, preview every write first:
+For a first installation from a development checkout, preview every write first:
 
 ```bash
 python scripts/run-fabric.py distribution install-release . --preview
 python scripts/run-fabric.py distribution install-release .
 
-python scripts/run-fabric.py distribution enable-client codex --preview
-python scripts/run-fabric.py distribution enable-client codex
+ai-agent-fabric distribution enable-client codex --preview
+ai-agent-fabric distribution enable-client codex
 ```
 
 After installation, use the global launcher. Merely opening a repository never creates
@@ -221,24 +267,29 @@ between a source branch, an installed release, and a project's binding.
 
 ## Commands and entry points
 
-All state-changing commands require a bound project. The installed launcher exposes
-these command groups:
+Project-local task and memory writes require a bound project. Distribution installation
+and project initialization are separate, explicitly previewed operations. The installed
+launcher exposes these command groups:
 
 | Need | Command | What it does |
 | --- | --- | --- |
 | Inspect a project | `project status <project> --json` | Read-only binding and release status. |
-| Enter work | `work <project> [task-id] --json` | Read-only router: restores one task, starts intake, or asks for a task choice. |
+| Enter work | `work <project> [task-id] --json` | Read-only router: returns a restore, new-task intake or task-selection route. |
 | Start a task | `start <project> --title "..." --type planned --json` | Preview by default; `--apply` creates the package and a pending separate-Socrates-chat claim. |
 | Choose or restore task context | `restore <project> [number\|title\|task-id] --json` | Without a selection, shows numbered active tasks. A number, exact title, or id restores the selected task. |
 | Claim a Socrates chat | `socrates claim <project> --session <task-id> --thread-id <chat-thread-id> --json` | Binds the one separate Socrates chat and activates its lifecycle. |
 | Process a concrete failure | `guards failure <project> ... --json` | Records Socrates-owned failure and Guard outcome from an existing evidence artifact; returns retry, block, or escalation. |
 | Advance task checklist | `socrates step <project> ... --json` | Socrates-only ordered step transition; completed steps cannot be restarted by restore. |
+| Diagnose a task | `socrates diagnose <project> --session <task-id> --json` | Read-only lifecycle and Guard state with a reason and recommended next action. |
 | Inspect the host | `detect --json` | Read-only capability report. |
 | Inspect Harness | `harness health <project> --json` | Read-only health report for local state and pinned release. |
+| Preview maintenance | `harness maintenance-preview <project> --task-id <task-id> --candidate <file> --json` | Check a project-local candidate against enabled policy; no files or commands are changed. |
+| Apply maintenance | `harness maintenance-apply <project> --task-id <task-id> --candidate <file> --json` | Apply one approved text edit after practical conflict checks; no external command or delivery is run. |
 
 Use `ai-agent-fabric --help` or a command's `--help` for the exact arguments. The
 development wrapper `python scripts/run-fabric.py` builds or inspects a release; bound
-projects use the global launcher instead.
+projects use the global launcher instead. The [CLI operations guide](docs/cli.md)
+describes prerequisites, state changes, examples and next steps.
 
 ## Tasks, memory, and recovery
 
@@ -291,7 +342,7 @@ or Harness logs.
 | `work <project>` | Routes to one active task or new-task intake. | Start implementation or mutate state. |
 | `restore <project> <task-id>` | Task artifacts, local session context, and pending delegation results. | Run a project command, edit files, or advance a task. |
 | `memory restore <project> --session <task-id>` | The memory record for one orchestrator session. | Change the session. |
-| `harness resume <project>` | A read-only snapshot of Fabric task and Harness context. | Start services, contact trackers, or change state. |
+| `harness resume <project> <task-id>` | A read-only snapshot of Fabric task and Harness context. | Start services, contact trackers, or change state. |
 
 This distinction is intentional: a recovery command can reconstruct context after a
 crash without silently resuming execution. Socrates reads the restored state, identifies
@@ -359,8 +410,10 @@ Read the [portable workflow](docs/workflow.md) and [task specifications](docs/ta
 
 ## Harness: learning from agent friction
 
-Harness is a project-local retrospective loop, not automatic self-modification. It
-stores minimal, identifier-only audit data under `.agent-fabric/harness/`:
+Harness is a project-local retrospective loop. Review does not modify instructions;
+the separate optional maintenance action applies only a specifically approved, narrow
+project-local configuration candidate. Harness stores identifier-only audit data under
+`.agent-fabric/harness/`:
 
 ```text
 trace.jsonl                 gate/checkpoint audit events

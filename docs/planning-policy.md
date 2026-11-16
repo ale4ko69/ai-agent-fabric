@@ -23,9 +23,10 @@ evidence -> plan -> KEPLER verdict -> approval gate -> implementation
 
 The Plan role authors the proposal; it cannot approve its own plan. KEPLER reviews
 scope, alternatives, risks, validation, and evidence, then returns `advice`,
-`challenge`, or `block`. A target-project policy selects whether a human approval is
-also required. Implementation is blocked until challenges are resolved, blocks are
-lifted by new evidence, and the required approval is present.
+`challenge`, or `block`. Planned work requires explicit owner approval of the current
+reviewed package. Implementation is blocked until challenges are resolved, blocks are
+lifted by new evidence, and the required approval is present. See
+[task specifications](task-specs.md) for terminal and agent-attested chat methods.
 
 ## Scope lock
 

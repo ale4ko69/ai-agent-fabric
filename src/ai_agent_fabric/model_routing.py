@@ -11,6 +11,7 @@ from .project_state import state_path
 TIERS = {"economy", "standard", "deep"}
 PRICE_POLICIES = {"minimize", "balanced", "quality-first"}
 CANONICAL_ROLES = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"}
+OPTIONAL_ROLES = {"maintenance"}
 
 
 def default_routing() -> dict[str, Any]:
@@ -23,7 +24,8 @@ def default_routing() -> dict[str, Any]:
             "opponent": {"capability_floor": "standard", "cost_policy": "minimize", "allowed": ["standard", "deep"]},
             "dev": {"capability_floor": "standard", "cost_policy": "balanced", "allowed": ["standard", "deep"]},
             "review": {"capability_floor": "standard", "cost_policy": "minimize", "allowed": ["standard", "deep"]},
-            "validation": {"capability_floor": "standard", "cost_policy": "minimize", "allowed": ["standard", "deep"]}
+            "validation": {"capability_floor": "standard", "cost_policy": "minimize", "allowed": ["standard", "deep"]},
+            "maintenance": {"capability_floor": "standard", "cost_policy": "balanced", "allowed": ["standard", "deep"]}
         }
     }
 
@@ -38,7 +40,7 @@ def validate_routing(routing: dict[str, Any]) -> None:
     roles = routing.get("role_tiers")
     if not isinstance(roles, dict):
         raise ValueError("role_tiers must be an object")
-    unknown = set(roles) - CANONICAL_ROLES
+    unknown = set(roles) - CANONICAL_ROLES - OPTIONAL_ROLES
     missing = CANONICAL_ROLES - set(roles)
     if unknown or missing:
         details = []

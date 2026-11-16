@@ -80,8 +80,8 @@ failure or outcome. The lifecycle then resumes its already-preserved current ste
 
 The database transaction writes both the failure/outcome and an identifier-only pending
 trace event. The event is then delivered to `harness/trace.jsonl` using its failure key
-as an idempotency key. If the process stops between those operations, the next
-`restore` flushes pending events exactly once before Socrates chooses the next action.
+as an idempotency key. If the process stops between those operations, root `restore`
+remains read-only; a subsequent Socrates claim flushes pending events idempotently.
 
 ## Different from Harness signals
 

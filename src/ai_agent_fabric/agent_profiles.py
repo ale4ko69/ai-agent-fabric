@@ -13,6 +13,7 @@ def default_profiles() -> dict[str, object]:
             _profile("dev", "Heracles", "Implements approved scoped changes.", "always", ["read", "edit", "search", "bash"], "standard", "balanced"),
             _profile("review", "Athena", "Reviews changed work against evidence and acceptance criteria.", "always", ["read", "search", "bash-read-only"], "standard", "balanced"),
             _profile("validation", "Euclid", "Validates declared contracts and assertions when the project enables it.", "project-capability", ["read", "search", "bash-read-only"], "standard", "minimize"),
+            _profile("maintenance", "Metis", "Inspects bounded project-local Harness maintenance candidates.", "project-capability", ["read", "search"], "standard", "balanced"),
         ],
     }
 

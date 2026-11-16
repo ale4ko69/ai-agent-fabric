@@ -27,9 +27,9 @@ of any Fabric role the relevant project context without exposing it to another p
 
 `memory restore` and `harness resume` are deliberately read-only: they reconstruct
 task artifacts, memory records, and unacknowledged results without executing a project
-command or querying a tracker or remote service. The task-level `restore` command is
-different: it reactivates that task's Socrates session and then returns the same durable
-context; it still does not execute project work.
+command or querying a tracker or remote service. Task-level `restore` returns the
+durable context and Socrates chat request; the claimed chat, not root restore, owns
+subsequent lifecycle work and pending trace delivery.
 
 ## Guard failures
 
@@ -41,7 +41,7 @@ the current retry, block, or escalation outcome. Harness signals remain a separa
 identifier-only retrospective input. See [Guards](guards.md).
 
 A Guard failure transaction also creates a pending identifier-only trace event in local
-memory. Delivery to `harness/trace.jsonl` is idempotent and is retried by task restore,
+memory. Delivery to `harness/trace.jsonl` is idempotent and is retried by Socrates claim,
 so an interruption after durable failure persistence cannot silently lose the audit
 event or duplicate it.
 

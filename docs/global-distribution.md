@@ -20,7 +20,7 @@ user-level Fabric release
 
 | Layer | Owns | May change |
 |---|---|---|
-| Global Fabric release | Seven canonical roles, portable workflow, schemas, shared policy, client renderers | Only a Fabric update |
+| Global Fabric release | Canonical roles, portable workflow, schemas, shared policy, client renderers | Only a Fabric update |
 | Client bootstrap | Finds the active Fabric release and then the current project binding | Only the selected client adapter |
 | Project binding | Selected Fabric release, enabled packs, selected client, project profile location | A project installer or explicit update |
 | Project profile | Commands, paths, integrations, tracker rules, model mapping, local policy | The project owner |
@@ -55,10 +55,26 @@ The source checkout is never used as a runtime installation. The development rep
 remains separate from the user-level installer, which creates releases in the Fabric
 home.
 
-Before the first release exists, run the source checkout through
-`python scripts/run-fabric.py`. This helper adds only that checkout's `src/` directory
-to its own Python process; it is not installed into a project and is not used by any
-release after installation.
+For first installation or a specifically reviewed cross-version bootstrap, the source
+checkout provides `python scripts/run-fabric.py`. This helper adds that checkout's
+`src/` directory to its own Python process; it is not installed into a project. The
+installed global launcher remains the normal entry point after installation.
+
+Cross-version installer behavior must be verified before upgrading. The 0.1.29
+installer generates contracts and selects assets from its own runtime, so using it
+directly with 0.1.30 source can produce a mixed package without Metis or the CLI guide.
+For that one transition, the owner-directed recovery uses the reviewed 0.1.30 source
+installer after a preview, then verifies the installed registry, bootstrap and manifest
+before updating any project binding. It does not overwrite an existing immutable release.
+From 0.1.30 onward, the installed launcher reads a declarative source file list for
+preview without executing the target source. For cross-version installation it checks
+the source digest from that preview and delegates the actual installation to the
+explicitly selected source's versioned installer in a separate Python process. If the
+source declaration or structured handoff is unsupported, the operation fails rather
+than publishing a mixed release. Choose trusted source code: digest checking detects a
+change since review but does not sandbox the installer. The preview includes managed
+skill paths and the optional existing Codex skill-ownership record; the latter is
+updated only when a valid existing record requires it.
 
 ```text
 <fabric-home>/
@@ -237,6 +253,11 @@ anything. Binding and journal files are replaced atomically; if a torn binding i
 detected, the repair path may restore only the journal's trusted project-local backup.
 Rollback is blocked until that repair succeeds. Fabric never guesses that a migrated
 database should be downgraded.
+
+For a target release that supports maintenance policy, update preview also reports the
+project-local policy disposition. An existing policy is preserved; an absent policy
+remains absent and maintenance defaults to deny. Updating does not enable maintenance
+or rewrite a project overlay. A project owner opts in separately.
 
 ## Client adapter decision record
 

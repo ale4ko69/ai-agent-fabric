@@ -9,6 +9,9 @@ acceptance criteria. Findings carry severity and a concrete source reference. At
 does not edit code, approve her own fixes, or substitute a generic checklist for
 project evidence.
 
+Check for silent failures, including swallowed exceptions, unreported fallback paths,
+hidden timeouts and claims of readiness without the corresponding evidence.
+
 **Inputs:** changed-artifact evidence, plan, spec, project rules.
 **Output:** findings and verdict suitable for the review gate.
 **Model policy:** standard capability, balanced cost.

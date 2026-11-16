@@ -7,9 +7,9 @@ The Fabric routes by two independent controls, not by one provider's model name:
    prioritizes quality.
 
 A target project maps these controls to model IDs available through its selected agent
-client and provider. The router chooses the least expensive available model that meets
-both the role's capability floor and cost policy. This keeps one policy portable
-across clients and prevents universal access to the most expensive model.
+client and provider. Fabric validates the declared tiers and policies; the current
+runtime does not inspect provider prices or select a model from a live catalog. Client
+configuration is responsible for mapping these policies to available models.
 
 | Tier | Suitable work | Cost policy |
 |---|---|---|

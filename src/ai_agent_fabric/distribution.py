@@ -7,13 +7,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from pathlib import PureWindowsPath
+from pathlib import PurePosixPath, PureWindowsPath
 import platform
 import re
 import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 from .clients import SUPPORTED_CLIENTS
@@ -46,6 +47,7 @@ RELEASE_ASSETS = (
     "hooks",
     "README.md",
     "pyproject.toml",
+    "release-source.json",
     "src",
     "core",
     "schemas",
@@ -55,6 +57,7 @@ RELEASE_ASSETS = (
     "docs/architecture.md",
     "docs/agent-clients.md",
     "docs/client-adapter-evidence.md",
+    "docs/cli.md",
     "docs/delegation.md",
     "docs/execution-policy.md",
     "docs/gates.md",
@@ -74,6 +77,13 @@ RELEASE_ASSETS = (
     "docs/validation-matrix.md",
     "docs/workflow.md",
     "docs/integrations",
+)
+RELEASE_HOME_OUTPUTS = (
+    "installation.json", "bin/ai-agent-fabric", "bin/ai-agent-fabric.py",
+    "adapters/codex/bootstrap.md", "adapters/copilot/bootstrap.md", "adapters/claude/bootstrap.md",
+    "marketplace/plugins/agent-fabric", "marketplace/.agents/plugins/marketplace.json",
+    "skills/work", "skills/start", "skills/restore", "skills/harness", "skills/guards",
+    "clients/codex-skills.json", "clients/codex.json", "clients/copilot.json", "clients/claude.json",
 )
 
 
@@ -279,13 +289,26 @@ def validate_installation_manifest(manifest: dict[str, Any]) -> None:
             raise ValueError("installation manifest release path does not match its version")
 
 
-def install_release(source_root: Path, fabric_home: Path | None = None, version: str | None = None) -> Path:
+def install_release(source_root: Path, fabric_home: Path | None = None, version: str | None = None, *, expected_source_sha256: str | None = None) -> Path:
     """Create an immutable user-level release without replacing an existing release."""
     source = source_root.resolve()
+    _validate_source(source)
+    _checked_source_path(source, "pyproject.toml")
     selected_version = version or _source_version(source)
     _validate_version(selected_version)
-    _validate_source(source)
     home = (fabric_home or default_fabric_home()).expanduser().resolve()
+    actual_digest = release_source_digest(source)
+    if expected_source_sha256 is not None and expected_source_sha256 != actual_digest:
+        raise ValueError("Release source changed since preview; inspect a new preview")
+    if not _source_owns_installer(source):
+        if expected_source_sha256 is None:
+            raise ValueError("Cross-version install requires the source digest returned by preview")
+        paths = _run_source_installer(source, home, selected_version, actual_digest)
+        if len(paths) != 1 or paths[0] != release_path(home, selected_version):
+            raise ValueError("Target source installer returned an unexpected release path")
+        _validate_installed_release(home, selected_version)
+        return paths[0]
+    _validate_release_assets(source)
     destination = release_path(home, selected_version)
     if destination.exists():
         raise FileExistsError(f"Fabric release already exists and will not be replaced: {destination}")
@@ -347,23 +370,66 @@ def bind_project(project_root: Path, release: str, client: str, fabric_home: Pat
 def release_preview(source_root: Path, fabric_home: Path | None = None, version: str | None = None) -> list[Path]:
     """List all paths a release installation would create or replace."""
     source = source_root.resolve()
+    _validate_source(source)
+    _checked_source_path(source, "pyproject.toml")
     selected_version = version or _source_version(source)
     _validate_version(selected_version)
-    _validate_source(source)
     home = (fabric_home or default_fabric_home()).expanduser().resolve()
+    declaration = _load_source_declaration(source)
+    if _source_owns_installer(source):
+        _validate_release_assets(source)
+    else:
+        _validate_declared_assets(source, declaration["assets"])
     destination = release_path(home, selected_version)
     if destination.exists():
         raise FileExistsError(f"Fabric release already exists and will not be replaced: {destination}")
-    paths = [destination / asset for asset in RELEASE_ASSETS]
-    paths.extend(_release_generated_paths(destination))
-    paths.extend([destination / RELEASE_MANIFEST_FILE, installation_path(home), home / "bin" / "ai-agent-fabric", home / "bin" / "ai-agent-fabric.py"])
-    paths.extend(home / "adapters" / client / "bootstrap.md" for client in SUPPORTED_CLIENTS)
-    paths.extend([
-        home / "marketplace" / "plugins" / "agent-fabric",
-        home / "marketplace" / ".agents" / "plugins" / "marketplace.json",
-    ])
+    paths = [destination / asset for asset in declaration["assets"]]
+    paths.extend(destination / item for item in declaration["generated"])
+    paths.append(destination / RELEASE_MANIFEST_FILE)
+    paths.extend(home / item for item in declaration["home_outputs"])
     if installation_path(home).exists():
         paths.append(home / "backups" / "installation-<timestamp>.json")
+    return paths
+
+
+def _source_owns_installer(source: Path) -> bool:
+    """A source wrapper runs its own versioned installer; installed code delegates."""
+    return Path(__file__).resolve() == (source / "src/ai_agent_fabric/distribution.py").resolve()
+
+
+def _run_source_installer(source: Path, home: Path, version: str, digest: str) -> list[Path]:
+    """Run reviewed source from a fresh bytecode-free staging copy."""
+    environment = os.environ.copy()
+    for key in ("PYTHONPATH", "PYTHONHOME", "AI_AGENT_FABRIC_HOME"):
+        environment.pop(key, None)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    try:
+        declaration = _load_source_declaration(source)
+        _validate_declared_assets(source, declaration["assets"])
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        with tempfile.TemporaryDirectory(prefix="fabric-source-", dir=temp_root) as directory:
+            staging_root = Path(directory).resolve()
+            if staging_root == temp_root or not staging_root.is_relative_to(temp_root):
+                raise ValueError("Installer staging directory escaped its temporary root")
+            staged = staging_root / "source"
+            staged.mkdir()
+            for relative in declaration["assets"]:
+                _copy_asset(source, staged, relative)
+            if release_source_digest(staged) != digest or release_source_digest(source) != digest:
+                raise ValueError("Release source changed while preparing the installer")
+            script = _checked_source_path(staged, "scripts/run-fabric.py")
+            command = [sys.executable, "-I", "-S", "-B", str(script), "distribution", "install-release", str(staged), "--home", str(home), "--version", version, "--expected-source-sha256", digest, "--json"]
+            completed = subprocess.run(command, cwd=str(staged), env=environment, capture_output=True, text=True, encoding="utf-8", timeout=120, check=True)
+            payload = json.loads(completed.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        raise ValueError("Selected source installer failed; inspect the source and installation state before retrying") from error
+    if not isinstance(payload, dict) or set(payload) != {"paths", "source_sha256"} or payload["source_sha256"] != digest or not isinstance(payload["paths"], list) or any(not isinstance(item, str) for item in payload["paths"]):
+        raise ValueError("Selected source installer returned an invalid result")
+    if any(not Path(item).is_absolute() for item in payload["paths"]):
+        raise ValueError("Selected source installer must report absolute paths")
+    paths = [Path(os.path.abspath(item)) for item in payload["paths"]]
+    if not paths or any(not path.is_relative_to(home) for path in paths):
+        raise ValueError("Selected source installer reported paths outside the Fabric home")
     return paths
 
 
@@ -597,6 +663,8 @@ def project_update_preview(project_root: Path, release: str, fabric_home: Path |
         raise ValueError("Project memory is older than the selected release's supported migration floor")
     if current_memory_version > target_memory["schema_version"]:
         raise ValueError("Project memory is newer than the selected release and cannot be downgraded")
+    target_supports_maintenance = (release_path(home, release) / "schemas" / "maintenance-policy.schema.json").is_file()
+    maintenance_path = state_path(project, "config/maintenance-policy.json") if target_supports_maintenance else None
     return {
         "binding": str(binding_path),
         "from_release": binding["fabric_release"],
@@ -607,6 +675,12 @@ def project_update_preview(project_root: Path, release: str, fabric_home: Path |
             "from_schema": current_memory_version,
             "to_schema": target_memory["schema_version"],
             "required": current_memory_version < target_memory["schema_version"],
+        },
+        "maintenance_policy": {
+            "supported_by_target": target_supports_maintenance,
+            "path": str(maintenance_path) if maintenance_path is not None else None,
+            "exists": maintenance_path.is_file() if maintenance_path is not None else False,
+            "action": ("preserve" if maintenance_path.exists() else "default-deny-without-file") if maintenance_path is not None else "not-supported-by-target",
         },
     }
 
@@ -1599,6 +1673,94 @@ def _validate_source(source: Path) -> None:
         raise ValueError(f"Source is not an AI Agent Fabric repository: {source}")
 
 
+def _checked_source_path(source: Path, relative: str) -> Path:
+    current = source
+    for part in PurePosixPath(relative).parts:
+        current = current / part
+        if current.is_symlink() or getattr(current, "is_junction", lambda: False)():
+            raise ValueError(f"Release source path contains a link or junction: {relative}")
+        if current.exists() and getattr(current.lstat(), "st_file_attributes", 0) & 0x400:
+            raise ValueError(f"Release source path contains a reparse point: {relative}")
+    if not current.resolve().is_relative_to(source):
+        raise ValueError(f"Release source path escapes the selected source: {relative}")
+    return current
+
+
+def _load_source_declaration(source: Path) -> dict[str, Any]:
+    path = _checked_source_path(source, "release-source.json")
+    if not path.is_file():
+        raise ValueError("Selected source lacks a safe release-source.json declaration")
+    script = _checked_source_path(source, "scripts/run-fabric.py")
+    if not script.is_file():
+        raise ValueError("Selected source does not provide a safe versioned installer")
+    def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("Duplicate release source declaration key")
+            value[key] = item
+        return value
+    try:
+        declaration = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs)
+    except (OSError, ValueError) as error:
+        raise ValueError("Invalid release source declaration") from error
+    if not isinstance(declaration, dict) or set(declaration) != {"schema_version", "assets", "generated", "home_outputs"} or type(declaration.get("schema_version")) is not int or declaration["schema_version"] != 1:
+        raise ValueError("Invalid release source declaration")
+    for key in ("assets", "generated", "home_outputs"):
+        entries = declaration[key]
+        if not isinstance(entries, list) or not entries or any(not isinstance(item, str) for item in entries) or len(set(entries)) != len(entries):
+            raise ValueError("Invalid release source path list")
+        for item in entries:
+            posix, windows = PurePosixPath(item), PureWindowsPath(item)
+            if not item or "\\" in item or ":" in item or not posix.parts or posix.is_absolute() or windows.drive or windows.root or ".." in posix.parts or str(posix) != item:
+                raise ValueError("Release source paths must be normalized and relative")
+    if "release-source.json" not in declaration["assets"] or "scripts" not in declaration["assets"] or "src" not in declaration["assets"]:
+        raise ValueError("Release source declaration must include installer inputs")
+    return declaration
+
+
+def _validate_declared_assets(source: Path, assets: list[str]) -> None:
+    """Reject missing or linked inputs without executing source code."""
+    for relative in assets:
+        asset = _checked_source_path(source, relative)
+        if not asset.exists():
+            raise ValueError(f"Release source asset is missing: {asset}")
+        entries = [asset]
+        while entries:
+            entry = entries.pop()
+            if entry.is_symlink() or getattr(entry, "is_junction", lambda: False)() or getattr(entry.lstat(), "st_file_attributes", 0) & 0x400:
+                raise ValueError(f"Release source asset must not contain links or reparse points: {entry}")
+            if entry.is_dir():
+                entries.extend(entry.iterdir())
+
+
+def _validate_release_assets(source: Path) -> None:
+    declaration = _load_source_declaration(source)
+    expected_generated = [path.relative_to("release").as_posix() for path in _release_generated_paths(Path("release"))]
+    if declaration["assets"] != list(RELEASE_ASSETS) or declaration["generated"] != expected_generated or declaration["home_outputs"] != list(RELEASE_HOME_OUTPUTS):
+        raise ValueError("Release source declaration does not match this installer")
+    _validate_declared_assets(source, declaration["assets"])
+
+
+def release_source_digest(source_root: Path) -> str:
+    """Hash declared source inputs in a deterministic order; never execute them."""
+    source = source_root.resolve()
+    declaration = _load_source_declaration(source)
+    _validate_declared_assets(source, declaration["assets"])
+    digest = hashlib.sha256()
+    for relative in declaration["assets"]:
+        asset = source / relative
+        files = sorted((p for p in asset.rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"), key=lambda p: p.relative_to(source).as_posix()) if asset.is_dir() else [asset]
+        for item in files:
+            name = item.relative_to(source).as_posix().encode("utf-8")
+            data = item.read_bytes()
+            digest.update(len(name).to_bytes(8, "big"))
+            digest.update(name)
+            digest.update(len(data).to_bytes(8, "big"))
+            digest.update(data)
+    return digest.hexdigest()
+
+
 def _source_version(source: Path) -> str:
     match = re.search(r'^version\s*=\s*"([^"]+)"', (source / "pyproject.toml").read_text(encoding="utf-8"), re.MULTILINE)
     if not match:
@@ -1635,6 +1797,10 @@ def _write_release_adapters(release: Path) -> None:
             "# AI Agent Fabric global bootstrap\n\n"
             "This managed user-level instruction provides the shared Fabric only. "
             "It never supplies project commands, tracker settings, secrets, task content, or memory.\n\n"
+            "Before editing a file, inspect its current state and preserve changes made by the owner "
+            "or other agents. If the intended edit conflicts with current contents, stop on that file, "
+            "report the conflict and agree on a resolution; do not silently overwrite or revert other "
+            "work. This is an operational instruction, not a guarantee against every race.\n\n"
             "Do not assume the current global release applies to a repository.\n\n"
             "When the current repository contains `.agent-fabric/fabric-binding.json`, read that "
             "binding, then run the read-only command "

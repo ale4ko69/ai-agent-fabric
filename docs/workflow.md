@@ -93,6 +93,11 @@ acceptance criteria. Euclid performs validation only when the project has enable
 validation capability. A checkpoint records evidence labels against the immutable gate
 registry; it is not a substitute for the underlying evidence.
 
+Any agent editing a file first inspects its current state and preserves the owner's and
+other agents' changes. When the intended edit conflicts, stop on that file, report it
+and agree on a resolution instead of overwriting or reverting those changes. This is a
+practical operational rule, not an atomic guarantee against all concurrent processes.
+
 ## Interruption and close-out
 
 Specialist results enter the project-local outbox with an idempotency key. Socrates is

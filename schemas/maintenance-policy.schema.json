@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project-local maintenance policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "enabled", "paths", "commands", "delivery"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "enabled": {"type": "boolean"},
+    "paths": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "commands": {"type": "array", "items": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}},
+    "delivery": {"type": "array", "uniqueItems": true, "items": {"enum": ["commit", "push", "release"]}}
+  }
+}
