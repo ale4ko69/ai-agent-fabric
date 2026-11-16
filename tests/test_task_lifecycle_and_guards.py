@@ -376,6 +376,18 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable"):
             transition_step(self.project, "example-task", "intake", "in-progress")
 
+    def test_diagnose_reports_observed_state_without_advancing_it(self) -> None:
+        from ai_agent_fabric.socrates import diagnose
+        start_task(self.project, "Example task", "small-bug", "example-task")
+        claim_socrates_chat(self.project, "example-task", "socrates-example-task")
+        before = restore_task(self.project, "example-task")["memory"]["steps"]
+        report = diagnose(self.project, "example-task")
+        after = restore_task(self.project, "example-task")["memory"]["steps"]
+        self.assertEqual(report["reason"], "workflow-running")
+        self.assertEqual(report["recommended_action"], "continue-current-step")
+        self.assertEqual(report["observed"]["next_action"], "intake")
+        self.assertEqual(before, after)
+
     def test_internal_closure_atomically_resumes_the_next_step(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
         claim_socrates_chat(self.project, "example-task", "socrates-example-task")

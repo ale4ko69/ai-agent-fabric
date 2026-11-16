@@ -1,7 +1,9 @@
 """Run the Fabric CLI directly from a development checkout.
 
-Installed releases use their own Bash launcher. This helper is only the portable
-bootstrap path before the first release exists and deliberately creates no state.
+Installed releases use their global launcher for normal operations. This helper is the
+source-versioned installer entry point for first installation, reviewed cross-version
+bootstrap and launcher delegation. It does not itself create state without an invoked
+state-changing command.
 """
 
 from pathlib import Path

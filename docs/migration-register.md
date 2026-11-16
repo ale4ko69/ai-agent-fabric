@@ -5,6 +5,11 @@ not copied until it has a target classification, a destination, and validation
 evidence. Source-specific names, paths, commands, credentials, and network endpoints
 are intentionally not repeated here.
 
+The per-entry statuses below are a historical migration snapshot, not a live feature
+or release-status registry. Later releases may implement items still marked `queued`
+or add evidence after this snapshot. Check the current code, installed release and
+task evidence before relying on any individual status.
+
 Supporting Phase 1 evidence is kept with the task package: the source interface
 register, source artifact manifest, and environment-binding audit. Together they
 provide the source locations, inputs, outputs, side effects, dependencies, and
@@ -142,7 +147,7 @@ occurrence-level audit trail that this concise decision register indexes.
 | E-02 | Host classification | core | Windows/WSL/Linux detector | implemented |
 | E-03 | Runtime tool probe | core | Bash/Python/Git and concrete client capability probes | implemented; final validation deferred |
 | E-04 | Client selection | core | selected-client configuration and concrete surface preflight | implemented; final validation deferred |
-| E-05 | Client-specific artifacts | adapter | Codex/Copilot/Claude global bootstrap renderers with verified `ordered`/`combined`/`additive` loading semantics; native hook surfaces remain separately unconfigured | implemented; final validation deferred |
+| E-05 | Client-specific artifacts | adapter | Codex/Copilot/Claude bootstrap renderers; Codex has a declared plugin `SessionStart` hook, while other hook surfaces remain unconfigured | implemented; validation is client-specific |
 | E-06 | Secret entry | core | selected-release Bash hidden prompt + project-profile declared destination | implemented; final validation deferred |
 
 ## Client skill adaptations

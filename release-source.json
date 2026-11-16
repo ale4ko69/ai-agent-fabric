@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "assets": [
+    ".codex-plugin", "hooks", "README.md", "pyproject.toml", "release-source.json",
+    "src", "core", "schemas", "scripts", "skills", "docs/agents",
+    "docs/architecture.md", "docs/agent-clients.md", "docs/client-adapter-evidence.md",
+    "docs/cli.md", "docs/delegation.md", "docs/execution-policy.md", "docs/gates.md",
+    "docs/global-distribution.md", "docs/guards.md", "docs/harness.md", "docs/using-fabric.md",
+    "docs/manifests.md", "docs/memory.md", "docs/model-routing.md", "docs/planning-policy.md",
+    "docs/project-profile.md", "docs/project-onboarding.md", "docs/security", "docs/task-artifacts.md",
+    "docs/task-specs.md", "docs/validation-matrix.md", "docs/workflow.md", "docs/integrations"
+  ],
+  "generated": [
+    "core/agent-profiles.json", "core/gates.json", "bin/ai-agent-fabric",
+    "adapters/codex/adapter-manifest.json", "adapters/codex/bootstrap.md",
+    "adapters/copilot/adapter-manifest.json", "adapters/copilot/bootstrap.md",
+    "adapters/claude/adapter-manifest.json", "adapters/claude/bootstrap.md"
+  ],
+  "home_outputs": [
+    "installation.json", "bin/ai-agent-fabric", "bin/ai-agent-fabric.py",
+    "adapters/codex/bootstrap.md", "adapters/copilot/bootstrap.md", "adapters/claude/bootstrap.md",
+    "marketplace/plugins/agent-fabric", "marketplace/.agents/plugins/marketplace.json",
+    "skills/work", "skills/start", "skills/restore", "skills/harness", "skills/guards",
+    "clients/codex-skills.json", "clients/codex.json", "clients/copilot.json", "clients/claude.json"
+  ]
+}

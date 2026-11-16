@@ -10,6 +10,9 @@ target project enables the validation capability. This avoids forcing a framewor
 validation stack into every project. Euclid returns validation evidence through the
 outbox and never writes episodic memory directly.
 
+Report local checks, independent review, target acceptance, residual risks and the next
+permitted action separately. An unavailable target check remains unverified.
+
 **Inputs:** project validation profile, declared contract, changed-artifact evidence.
 **Output:** validation evidence, gaps, and a structured result.
 **Model policy:** standard capability, minimize cost.

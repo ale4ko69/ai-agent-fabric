@@ -22,7 +22,14 @@ artifacts and current-session evidence. Report only:
 - one bounded instruction, workflow, or Harness proposal per target;
 - findings outside the current task as deferred, never delegated work.
 
-Do not edit instructions, profiles, workflow, skills, or global Fabric during this
-skill. Kepler reviews the report and the human decides which proposals to apply. Only
-after both approvals may the retrospective cursor be closed with the explicit Harness
-command.
+This review remains read-only: do not edit instructions, profiles, workflow, skills,
+or global Fabric during the review. Kepler reviews the report and the human decides
+which proposals to apply. Only after both approvals may the retrospective cursor be
+closed with the explicit Harness command.
+
+Separately, if the active task already authorizes a digest-bound maintenance candidate
+and the project has explicitly enabled the `maintenance` capability and policy,
+Socrates may preview it and use the release's bounded maintenance action. That action
+is limited to the supported typed retrospective configuration, checks the current
+file and reports conflicts, and does not execute commands or deliver a release. Do not
+treat a signal, an allowlist entry or a preview as approval of an unrelated candidate.

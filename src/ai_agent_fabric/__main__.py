@@ -14,8 +14,10 @@ from .environment import detect_environment
 from .memory import acknowledge_result, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
 from .task_specs import approve_planned_task, approval_preview, archive_task, attest_chat_approval, create_task, implementation_readiness, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
+from .maintenance import apply_candidate, candidate_digest, inspect_operation, preview_candidate, parse_candidate, _safe_path
+from .socrates import diagnose
 from .entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
-from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
+from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, release_source_digest, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
 from .socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
 
 
@@ -25,7 +27,11 @@ def main() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="strict")
-    parser = argparse.ArgumentParser(prog="ai-agent-fabric")
+    parser = argparse.ArgumentParser(
+        prog="ai-agent-fabric",
+        description="Manage versioned Fabric releases and project-local task workflows.",
+        epilog="Start with 'project status <project> --json' and 'work <project> --json'. Use '<command> --help' for options; previews do not apply changes.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     detect = sub.add_parser("detect", help="Detect host environment without executing project commands")
     detect.add_argument("--json", action="store_true")
@@ -35,12 +41,12 @@ def main() -> None:
     preflight = sub.add_parser("preflight", help="Compare declared project requirements to detected capabilities")
     preflight.add_argument("target", type=Path)
     preflight.add_argument("--json", action="store_true")
-    work = sub.add_parser("work", help="Route a bound project to one restore or new-task path without writing")
+    work = sub.add_parser("work", help="Route a bound project to one restore or new-task path without writing", description="Inspect a bound project's task list and choose the next entry path; this command does not start work or modify task state.", epilog="Example: ai-agent-fabric work /path/to/project --json. Next: restore the selected task or preview start.")
     work.add_argument("target", type=Path)
     work.add_argument("selector", nargs="?")
     work.add_argument("--home", type=Path, default=default_fabric_home())
     work.add_argument("--json", action="store_true")
-    start = sub.add_parser("start", help="Preview or explicitly create one task package and request a separate Socrates chat")
+    start = sub.add_parser("start", help="Preview or explicitly create one task package and request a separate Socrates chat", description="Requires a bound project. Without --apply, inspect the proposed package; --apply creates it and requests a separate Socrates chat.", epilog="Example: ai-agent-fabric start /path/to/project --title 'Fix error' --type small-bug --json. Next: review and use --apply, then claim the task in its Socrates chat.")
     start.add_argument("target", type=Path)
     start.add_argument("--title", required=True)
     start.add_argument("--type", dest="work_class", required=True, choices=("small-bug", "planned"))
@@ -48,7 +54,7 @@ def main() -> None:
     start.add_argument("--home", type=Path, default=default_fabric_home())
     start.add_argument("--apply", action="store_true", help="Create the previewed package; omitted by default")
     start.add_argument("--json", action="store_true")
-    restore = sub.add_parser("restore", help="Resume one bound task's Socrates lifecycle without running project commands")
+    restore = sub.add_parser("restore", help="Resume one bound task's Socrates lifecycle without running project commands", description="Without a selector, list active tasks. With one, restore durable task context; no project command is executed.", epilog="Example: ai-agent-fabric restore /path/to/project my-task --json. Next: reopen the returned Socrates chat and continue its durable step.")
     restore.add_argument("target", type=Path)
     restore.add_argument("task_id", nargs="?", help="Task id, exact title, or one-based number from the restore task list")
     restore.add_argument("--home", type=Path, default=default_fabric_home())
@@ -86,7 +92,7 @@ def main() -> None:
     memory_restore.add_argument("--json", action="store_true")
     guard = sub.add_parser("guards", help="Record and process concrete project-local Guard failures")
     guard_sub = guard.add_subparsers(dest="guard_command", required=True)
-    guard_failure = guard_sub.add_parser("failure", help="Record one Guard failure and its declared policy outcome")
+    guard_failure = guard_sub.add_parser("failure", help="Record one Guard failure and its declared policy outcome", description="Requires a claimed task, a concrete failure and an existing project-local evidence artifact. Records the pinned Guard outcome; it never retries the action.", epilog="Example: ai-agent-fabric guards failure /path/to/project --session my-task --idempotency-key failure-1 --incident-id incident-1 --guard command --artifact docs/specs/active/my-task/evidence/failure.md --json. Next: follow the returned retry, block or escalation.")
     guard_failure.add_argument("target", type=Path)
     guard_failure.add_argument("--session", required=True)
     guard_failure.add_argument("--idempotency-key", required=True)
@@ -112,6 +118,11 @@ def main() -> None:
     socrates_claim.add_argument("--thread-id", required=True)
     socrates_claim.add_argument("--home", type=Path, default=default_fabric_home())
     socrates_claim.add_argument("--json", action="store_true")
+    socrates_diagnose = socrates_sub.add_parser("diagnose", help="Read the task state, stop reason and recommended next action", description="Read a bound project's durable task and Guard state. It does not retry, resolve or change anything.", epilog="Example: ai-agent-fabric socrates diagnose /path/to/project --session my-task --json. Follow the returned recommended action.")
+    socrates_diagnose.add_argument("target", type=Path)
+    socrates_diagnose.add_argument("--session", required=True)
+    socrates_diagnose.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_diagnose.add_argument("--json", action="store_true")
     socrates_resolve_guard = socrates_sub.add_parser("resolve-guard", help="Record owner direction resolving one blocked or escalated Guard")
     socrates_resolve_guard.add_argument("target", type=Path)
     socrates_resolve_guard.add_argument("--session", required=True)
@@ -157,13 +168,13 @@ def main() -> None:
     spec_readiness.add_argument("target", type=Path)
     spec_readiness.add_argument("task_id")
     spec_readiness.add_argument("--json", action="store_true")
-    spec_approve = spec_sub.add_parser("approve", help="Record an interactive human approval for the current Kepler-reviewed package")
+    spec_approve = spec_sub.add_parser("approve", help="Record an interactive human approval for the current Kepler-reviewed package", description="Requires a bound project and a current Kepler advice verdict. --preview is read-only; without it a human terminal confirmation records approval for the shown digests.", epilog="Example: ai-agent-fabric spec approve /path/to/project my-task --preview --json. Next: present the reviewed package and record the owner's decision.")
     spec_approve.add_argument("target", type=Path)
     spec_approve.add_argument("task_id")
     spec_approve.add_argument("--home", type=Path, default=default_fabric_home())
     spec_approve.add_argument("--preview", action="store_true")
     spec_approve.add_argument("--json", action="store_true")
-    spec_chat = spec_sub.add_parser("attest-chat-approval", help="Record the agent's assertion of a specific owner chat decision")
+    spec_chat = spec_sub.add_parser("attest-chat-approval", help="Record the agent's assertion of a specific owner chat decision", description="Requires an explicit owner decision after presenting the exact reviewed package. Records a 24-hour agent assertion, not authenticated owner identity or terminal input.", epilog="Example: ai-agent-fabric spec attest-chat-approval /path/to/project my-task --reviewed-kepler-sha256 <digest> --chat-reference <reference>. Next: recheck spec readiness.")
     spec_chat.add_argument("target", type=Path)
     spec_chat.add_argument("task_id")
     spec_chat.add_argument("--reviewed-kepler-sha256", required=True)
@@ -185,7 +196,7 @@ def main() -> None:
     harness_resume.add_argument("target", type=Path)
     harness_resume.add_argument("task_id")
     harness_resume.add_argument("--json", action="store_true")
-    harness_checkpoint = harness_sub.add_parser("checkpoint", help="Validate a shared Fabric gate and append its local checkpoint")
+    harness_checkpoint = harness_sub.add_parser("checkpoint", help="Validate a shared Fabric gate and append its local checkpoint", description="Requires a bound project and task session. Validates the evidence labels declared by the pinned release and appends an identifier-only trace; labels are not proof that work occurred.", epilog="Example: ai-agent-fabric harness checkpoint /path/to/project --session my-task --gate intake --evidence '[\"task-classification\",\"task-state\"]' --json. Next: inspect the checkpoint or recorded failure.")
     harness_checkpoint.add_argument("target", type=Path)
     harness_checkpoint.add_argument("--gate", required=True)
     harness_checkpoint.add_argument("--evidence", required=True, help="JSON list of evidence names, never secret values")
@@ -206,6 +217,28 @@ def main() -> None:
     harness_review.add_argument("target", type=Path)
     harness_review.add_argument("--home", type=Path, default=default_fabric_home())
     harness_review.add_argument("--json", action="store_true")
+    harness_maintenance = harness_sub.add_parser("maintenance-preview", help="Inspect a maintenance candidate against the project policy without changing files", description="Requires a bound project, enabled maintenance capability, enabled local policy and a currently approved task. Reads the project-local candidate; executes no commands and applies no changes.", epilog="Example: ai-agent-fabric harness maintenance-preview /path/to/project --task-id my-task --candidate docs/specs/active/my-task/candidate.json --json. Next: inspect the result and evidence; preview is not approval to apply.")
+    harness_maintenance.add_argument("target", type=Path)
+    harness_maintenance.add_argument("--task-id", required=True)
+    harness_maintenance.add_argument("--candidate", type=Path, required=True, help="Project-local JSON candidate")
+    harness_maintenance.add_argument("--home", type=Path, default=default_fabric_home())
+    harness_maintenance.add_argument("--json", action="store_true")
+    harness_digest = harness_sub.add_parser("maintenance-digest", help="Compute a project-local candidate digest without approving it", description="Reads a project-local JSON candidate without requiring task approval. Returns a canonical digest only; it grants no authority and performs no mutation.", epilog="Example: ai-agent-fabric harness maintenance-digest /path/to/project --candidate docs/specs/active/my-task/candidate.json --json. Next: include the digest in the scoped task for review and owner decision.")
+    harness_digest.add_argument("target", type=Path)
+    harness_digest.add_argument("--candidate", type=Path, required=True)
+    harness_digest.add_argument("--home", type=Path, default=default_fabric_home())
+    harness_digest.add_argument("--json", action="store_true")
+    harness_apply = harness_sub.add_parser("maintenance-apply", help="Apply one approved maintenance text edit after conflict checks", description="Requires a bound project, enabled policy, current approved task and a candidate digest in its approved specification. Applies one existing project-local text file after a preimage check; executes no commands or delivery. Concurrent-write checks are not atomic compare-and-swap.", epilog="Preview the candidate first. On conflict, preserve the target and agree on a resolution.")
+    harness_apply.add_argument("target", type=Path)
+    harness_apply.add_argument("--task-id", required=True)
+    harness_apply.add_argument("--candidate", type=Path, required=True)
+    harness_apply.add_argument("--home", type=Path, default=default_fabric_home())
+    harness_apply.add_argument("--json", action="store_true")
+    harness_inspect = harness_sub.add_parser("maintenance-inspect", help="Inspect a journaled maintenance operation without changing it", description="Requires a bound project and a candidate digest. Compares the current target and saved preimage with the local journal; it never restores, retries or writes.", epilog="Example: ai-agent-fabric harness maintenance-inspect /path/to/project --candidate-sha256 <digest> --json. Preserve a conflicting file and agree on a resolution.")
+    harness_inspect.add_argument("target", type=Path)
+    harness_inspect.add_argument("--candidate-sha256", required=True)
+    harness_inspect.add_argument("--home", type=Path, default=default_fabric_home())
+    harness_inspect.add_argument("--json", action="store_true")
     harness_retro_close = harness_sub.add_parser("close-retrospective", help="Advance the project Harness cursor after Kepler and human approval")
     harness_retro_close.add_argument("target", type=Path)
     harness_retro_close.add_argument("--report-artifact", required=True, help="Safe project-relative retrospective report path")
@@ -225,18 +258,20 @@ def main() -> None:
     distribution_adapter = distribution_sub.add_parser("adapter-manifest", help="Show a client adapter contract")
     distribution_adapter.add_argument("client", choices=("codex", "copilot", "claude"))
     distribution_adapter.add_argument("--json", action="store_true")
-    distribution_install = distribution_sub.add_parser("install-release", help="Install a new immutable Fabric release")
+    distribution_install = distribution_sub.add_parser("install-release", help="Install a new immutable Fabric release", description="Requires a valid source checkout and an unused release version. --preview lists proposed global writes; without it the versioned installer writes the release and installation metadata.", epilog="Example: ai-agent-fabric distribution install-release /path/to/source --preview. Next: inspect the preview before installation.")
     distribution_install.add_argument("source", type=Path)
     distribution_install.add_argument("--home", type=Path)
     distribution_install.add_argument("--version")
     distribution_install.add_argument("--preview", action="store_true")
+    distribution_install.add_argument("--json", action="store_true", help="Print the preview or installed paths as JSON")
+    distribution_install.add_argument("--expected-source-sha256", help="Source digest from preview; required for cross-version installation")
     distribution_bind = distribution_sub.add_parser("bind-project", help="Bind a project to an installed Fabric release")
     distribution_bind.add_argument("target", type=Path)
     distribution_bind.add_argument("--release", required=True)
     distribution_bind.add_argument("--client", required=True, choices=("codex", "copilot", "claude"))
     distribution_bind.add_argument("--home", type=Path)
     distribution_bind.add_argument("--preview", action="store_true")
-    distribution_update = distribution_sub.add_parser("update-project", help="Move one project binding to another installed release")
+    distribution_update = distribution_sub.add_parser("update-project", help="Move one project binding to another installed release", description="Requires a bound project and a compatible installed release. --preview reports binding, memory migration and policy disposition without writing; applying journals the update and backs up the binding.", epilog="Example: ai-agent-fabric distribution update-project /path/to/project --release 1.0.0 --preview. Next: review the preview and preserve project-owned configuration.")
     distribution_update.add_argument("target", type=Path)
     distribution_update.add_argument("--release", required=True)
     distribution_update.add_argument("--home", type=Path)
@@ -285,7 +320,7 @@ def main() -> None:
     project_command_preview.add_argument("name")
     project_command_preview.add_argument("--home", type=Path, default=default_fabric_home())
     project_command_preview.add_argument("--json", action="store_true")
-    project_init = project_sub.add_parser("init", help="Bind a fresh or cloned project to the active Fabric release")
+    project_init = project_sub.add_parser("init", help="Bind a fresh or cloned project to the active Fabric release", description="Requires an installed release and a selected client. --preview lists project-local writes; applying creates a binding and project state without replacing existing user-owned instructions.", epilog="Example: ai-agent-fabric project init /path/to/project --client codex --preview. Next: inspect the preview before binding.")
     project_init.add_argument("target", type=Path)
     project_init.add_argument("--client", required=True, choices=("codex", "copilot", "claude"))
     project_init.add_argument("--release")
@@ -364,6 +399,10 @@ def main() -> None:
         require_bound_project(args.target, args.home)
         result = claim_socrates_chat(args.target.resolve(), args.session, args.thread_id)
         flush_guard_traces(args.target)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "diagnose":
+        require_bound_project(args.target, args.home)
+        result = diagnose(args.target.resolve(), args.session)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "socrates" and args.socrates_command == "resolve-guard":
         require_bound_project(args.target, args.home)
@@ -449,6 +488,30 @@ def main() -> None:
         require_bound_project(args.target, args.home)
         report = retrospective_input(args.target)
         print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else report)
+    elif args.command == "harness" and args.harness_command in {"maintenance-digest", "maintenance-preview", "maintenance-apply"}:
+        require_bound_project(args.target, args.home)
+        root = args.target.resolve()
+        candidate_path = args.candidate if args.candidate.is_absolute() else root / args.candidate
+        try:
+            relative_candidate = candidate_path.relative_to(root).as_posix()
+            resolved = _safe_path(root, relative_candidate)
+            if not resolved.is_file():
+                raise ValueError("candidate must be an existing project file")
+            candidate = parse_candidate(resolved.read_text(encoding="utf-8"))
+            if args.harness_command == "maintenance-digest":
+                report = candidate_digest(candidate)
+            else:
+                report = (apply_candidate if args.harness_command == "maintenance-apply" else preview_candidate)(root, args.task_id, candidate)
+        except (OSError, ValueError, PermissionError) as error:
+            parser.error(str(error))
+        print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else report)
+    elif args.command == "harness" and args.harness_command == "maintenance-inspect":
+        require_bound_project(args.target, args.home)
+        try:
+            report = inspect_operation(args.target, args.candidate_sha256)
+        except (OSError, ValueError, PermissionError) as error:
+            parser.error(str(error))
+        print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else report)
     elif args.command == "harness" and args.harness_command == "close-retrospective":
         require_bound_project(args.target, args.home)
         result = close_retrospective(
@@ -470,9 +533,15 @@ def main() -> None:
         manifest = adapter_manifest(args.client)
         print(json.dumps(manifest, ensure_ascii=False, indent=2) if args.json else manifest)
     elif args.command == "distribution" and args.distribution_command == "install-release":
-        paths = release_preview(args.source, args.home, args.version) if args.preview else [install_release(args.source, args.home, args.version)]
-        for path in paths:
-            print(path)
+        digest = release_source_digest(args.source)
+        paths = release_preview(args.source, args.home, args.version) if args.preview else [install_release(args.source, args.home, args.version, expected_source_sha256=args.expected_source_sha256)]
+        if args.preview and release_source_digest(args.source) != digest:
+            parser.error("release source changed while preparing preview; inspect it again")
+        if args.json:
+            print(json.dumps({"paths": [str(path) for path in paths], "source_sha256": digest}, ensure_ascii=False, indent=2))
+        else:
+            for path in paths:
+                print(path)
     elif args.command == "distribution" and args.distribution_command == "bind-project":
         paths = binding_preview(args.target, args.release, args.client, args.home) if args.preview else [bind_project(args.target, args.release, args.client, args.home)]
         for path in paths:

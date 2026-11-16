@@ -147,12 +147,15 @@ def _record_signal(
 
 def retrospective_input(project_root: Path) -> dict[str, Any]:
     """Read the project-local window since the last approved Harness run."""
+    from .capabilities import load_capabilities
+    from .maintenance import retrospective_config
+
     root = project_root.resolve()
     state = _load_retrospective_state(root)
     after_offset = state.get("last_processed_offset", 0)
     signals, watermark = _read_signals_since(root, after_offset)
     snapshot_digest = _signal_window_digest(root, after_offset, watermark)
-    return {
+    report = {
         "generated_at": _utc_timestamp(),
         "since_offset": after_offset,
         "snapshot": {"start_offset": after_offset, "end_offset": watermark, "sha256": snapshot_digest},
@@ -163,6 +166,20 @@ def retrospective_input(project_root: Path) -> dict[str, Any]:
             "write_policy": "Do not edit instructions, profiles, workflow, or global Fabric from this input. Kepler and a human must review proposals first.",
         },
     }
+    if "maintenance" in load_capabilities(root)["enabled_packs"]:
+        config = retrospective_config(root)
+        report["maintenance_context"] = {
+            "minimum_signal_count": config["minimum_signal_count"],
+            "threshold_met": len(signals) >= config["minimum_signal_count"],
+            "summary_style": config["summary_style"],
+            "candidate_input": {
+                "status": "needs-evidence-and-scoped-proposal",
+                "signal_categories": sorted({signal["category"] for signal in signals}),
+                "evidence_artifacts": sorted({signal["artifact"] for signal in signals if signal.get("artifact")}),
+                "snapshot_sha256": snapshot_digest,
+            },
+        }
+    return report
 
 
 def close_retrospective(

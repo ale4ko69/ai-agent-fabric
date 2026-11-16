@@ -4,8 +4,11 @@ import tempfile
 import unittest
 from unittest import mock
 import os
+import hashlib
 import subprocess
 import sys
+import shutil
+import py_compile
 
 from ai_agent_fabric import distribution
 from ai_agent_fabric.distribution import (
@@ -25,6 +28,132 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DistributionLifecycleTest(unittest.TestCase):
+    def test_release_preview_includes_client_records_and_preserves_managed_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home, entry = root / "home", root / "AGENTS.md"
+            entry.write_text("Owner instructions\n", encoding="utf-8")
+            with mock.patch.object(distribution, "client_entry_point", return_value=entry):
+                install_release(SOURCE_ROOT, home, "test-old")
+                distribution.enable_client(home, "codex", "managed-block")
+                original_entry = entry.read_bytes()
+                preview = distribution.release_preview(SOURCE_ROOT, home, "test-new")
+                for client in ("codex", "copilot", "claude"):
+                    self.assertIn(home / "clients" / f"{client}.json", preview)
+                install_release(SOURCE_ROOT, home, "test-new")
+                self.assertEqual(entry.read_bytes(), original_entry)
+                record = json.loads((home / "clients/codex.json").read_text(encoding="utf-8"))
+                self.assertEqual(record["release"], "test-new")
+
+    def test_installed_launcher_uses_selected_source_installer_for_preview_and_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home, project, target_source = root / "home", root / "project", root / "target-source"
+            project.mkdir()
+            install_release(SOURCE_ROOT, home, "test-old")
+            bind_project(project, "test-old", "codex", home)
+            overlay = project / ".agent-fabric/project-overlay.md"
+            overlay.write_text("owner overlay", encoding="utf-8")
+            shutil.copytree(SOURCE_ROOT, target_source, ignore=shutil.ignore_patterns(".git", ".worktrees", ".agent-fabric", ".codex", ".agents", "specs", "__pycache__", "*.pyc"))
+            target_distribution = target_source / "src/ai_agent_fabric/distribution.py"
+            source_text = target_distribution.read_text(encoding="utf-8")
+            target_distribution.write_text(source_text.replace('    "docs/cli.md",', '    "docs/target-only.md",\n    "docs/cli.md",', 1), encoding="utf-8")
+            (target_source / "docs/target-only.md").write_text("target-only", encoding="utf-8")
+            declaration_path = target_source / "release-source.json"
+            declaration = json.loads(declaration_path.read_text(encoding="utf-8"))
+            declaration["assets"].insert(declaration["assets"].index("docs/cli.md"), "docs/target-only.md")
+            declaration_path.write_text(json.dumps(declaration), encoding="utf-8")
+            target_profiles = target_source / "src/ai_agent_fabric/agent_profiles.py"
+            target_profiles.write_text(target_profiles.read_text(encoding="utf-8").replace('"maintenance", "Metis"', '"maintenance", "TargetMetis"', 1), encoding="utf-8")
+            # A valid timestamp-based poisoned cache must never execute. Staging
+            # copies source without __pycache__ and launches isolated Python.
+            original = target_profiles.read_bytes()
+            original_stat = target_profiles.stat()
+            payload = b"\nopen(__import__('os').environ['F_M'],'w').close()\n"
+            needle = b"Validates declared contracts and assertions when the project enables it."
+            self.assertGreater(len(needle), len(payload))
+            poisoned = original.replace(needle, needle[len(payload):], 1) + payload
+            self.assertEqual(len(poisoned), len(original))
+            target_profiles.write_bytes(poisoned)
+            os.utime(target_profiles, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            py_compile.compile(str(target_profiles), doraise=True, invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP)
+            target_profiles.write_bytes(original)
+            os.utime(target_profiles, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            marker = root / "poisoned-bytecode-executed"
+            environment = os.environ.copy()
+            environment["F_M"] = str(marker)
+            base = [sys.executable, str(home / "bin/ai-agent-fabric.py"), "distribution", "install-release", str(target_source), "--home", str(home), "--version", "test-new", "--json"]
+            preview = json.loads(subprocess.run(base + ["--preview"], capture_output=True, text=True, check=True, env=environment).stdout)
+            self.assertIn(str(home / "releases/test-new/docs/target-only.md"), preview["paths"])
+            self.assertFalse((home / "releases/test-new").exists())
+            (target_source / "docs/target-only.md").write_text("changed after preview", encoding="utf-8")
+            stale = subprocess.run(base + ["--expected-source-sha256", preview["source_sha256"]], capture_output=True, text=True)
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertFalse((home / "releases/test-new").exists())
+            (target_source / "docs/target-only.md").write_text("target-only", encoding="utf-8")
+            installed = json.loads(subprocess.run(base + ["--expected-source-sha256", preview["source_sha256"]], capture_output=True, text=True, check=True, env=environment).stdout)
+            self.assertEqual(installed["paths"], [str(home / "releases/test-new")])
+            profiles = json.loads((home / "releases/test-new/core/agent-profiles.json").read_text(encoding="utf-8"))["profiles"]
+            self.assertEqual(next(p["persona"] for p in profiles if p["id"] == "maintenance"), "TargetMetis")
+            self.assertTrue((home / "releases/test-new/docs/target-only.md").is_file())
+            self.assertFalse(marker.exists())
+            self.assertEqual(project_status(project, home)["release"], "test-old")
+            self.assertEqual(overlay.read_text(encoding="utf-8"), "owner overlay")
+
+    def test_source_installer_missing_or_missing_asset_fails_before_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            shutil.copytree(SOURCE_ROOT, source, ignore=shutil.ignore_patterns(".git", ".worktrees", ".agent-fabric", ".codex", ".agents", "specs", "__pycache__", "*.pyc"))
+            (source / "scripts/run-fabric.py").unlink()
+            with self.assertRaisesRegex(ValueError, "safe versioned installer"):
+                distribution.release_preview(source, root / "home", "test-missing")
+            self.assertFalse((root / "home").exists())
+            shutil.copy2(SOURCE_ROOT / "scripts/run-fabric.py", source / "scripts/run-fabric.py")
+            (source / "docs/cli.md").unlink()
+            with self.assertRaisesRegex(ValueError, "Release source asset is missing"):
+                distribution.install_release(source, root / "home", "test-missing")
+            self.assertFalse((root / "home/releases/test-missing").exists())
+
+    def test_foreign_source_preview_never_executes_its_installer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            marker = root / "unexpected-side-effect"
+            shutil.copytree(SOURCE_ROOT, source, ignore=shutil.ignore_patterns(".git", ".worktrees", ".agent-fabric", ".codex", ".agents", "specs", "__pycache__", "*.pyc"))
+            (source / "scripts/run-fabric.py").write_text("from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('unexpected')\n", encoding="utf-8")
+            preview = distribution.release_preview(source, root / "home", "test-preview")
+            self.assertTrue(preview)
+            self.assertFalse(marker.exists())
+            self.assertFalse((root / "home").exists())
+
+    def test_foreign_source_preview_rejects_linked_parent_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, external = root / "source", root / "external-docs"
+            shutil.copytree(SOURCE_ROOT, source, ignore=shutil.ignore_patterns(".git", ".worktrees", ".agent-fabric", ".codex", ".agents", "specs", "__pycache__", "*.pyc"))
+            (source / "docs").rename(external)
+            try:
+                (source / "docs").symlink_to(external, target_is_directory=True)
+            except OSError:
+                self.skipTest("symbolic links are unavailable")
+            with self.assertRaisesRegex(ValueError, "link or junction"):
+                distribution.release_preview(source, root / "home", "test-linked-parent")
+            self.assertFalse((root / "home").exists())
+    def test_installed_candidate_digest_requires_no_prior_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home, project = root / "home", root / "project"
+            project.mkdir()
+            install_release(SOURCE_ROOT, home, "test-digest")
+            bind_project(project, "test-digest", "codex", home)
+            candidate = {"task_id": "future-task", "paths": ["docs/example.md"], "commands": [], "delivery": [], "evidence": ["evidence.md"]}
+            (project / "candidate.json").write_text(json.dumps(candidate), encoding="utf-8")
+            result = subprocess.run([sys.executable, str(home / "bin/ai-agent-fabric.py"), "harness", "maintenance-digest", str(project), "--candidate", "candidate.json", "--home", str(home), "--json"], capture_output=True, text=True, check=True)
+            output = json.loads(result.stdout)
+            expected = hashlib.sha256(json.dumps(candidate, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+            self.assertEqual(output["candidate_sha256"], expected)
+            self.assertEqual(output["status"], "digest-only-not-authorized")
     def test_windows_cp1252_python_launcher_emits_russian_json_as_utf8(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -93,7 +222,15 @@ class DistributionLifecycleTest(unittest.TestCase):
             update_preview = project_update_preview(project, "test-b", home)
             self.assertEqual(update_preview["from_release"], "test-a")
             self.assertEqual(update_preview["to_release"], "test-b")
+            self.assertEqual(update_preview["maintenance_policy"]["action"], "default-deny-without-file")
+            policy = project / ".agent-fabric/config/maintenance-policy.json"
+            policy.write_text('{"owner":"preserve"}', encoding="utf-8")
+            overlay = project / ".agent-fabric/project-overlay.md"
+            overlay_before = overlay.read_bytes()
+            self.assertEqual(project_update_preview(project, "test-b", home)["maintenance_policy"]["action"], "preserve")
             update_project(project, "test-b", home)
+            self.assertEqual(policy.read_text(encoding="utf-8"), '{"owner":"preserve"}')
+            self.assertEqual(overlay.read_bytes(), overlay_before)
             current = project_status(project, home)
             self.assertFalse(current["update_available"])
             rollback_preview = project_rollback_preview(project, home)
@@ -120,6 +257,28 @@ class DistributionLifecycleTest(unittest.TestCase):
             current = project_status(project, home)
             self.assertEqual(current["status"], "bound")
             self.assertEqual(current["release"], "test-b")
+
+    def test_interrupted_update_preserves_policy_and_overlay_until_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home, project = root / "fabric-home", root / "project"
+            project.mkdir()
+            install_release(SOURCE_ROOT, home, "test-a")
+            bind_project(project, "test-a", "codex", home)
+            install_release(SOURCE_ROOT, home, "test-b")
+            overlay = project / ".agent-fabric/project-overlay.md"
+            policy = project / ".agent-fabric/config/maintenance-policy.json"
+            overlay.write_text("owner overlay", encoding="utf-8")
+            policy.write_text('{"owner":"existing"}', encoding="utf-8")
+            with mock.patch.object(distribution, "_migrate_project_memory", side_effect=RuntimeError("simulated interruption")):
+                with self.assertRaisesRegex(RuntimeError, "simulated interruption"):
+                    update_project(project, "test-b", home)
+            self.assertEqual(project_status(project, home)["status"], "update-pending")
+            self.assertEqual(distribution.repair_project_update_preview(project, home)["stage"], "prepared")
+            distribution.repair_project_update(project, home)
+            self.assertEqual(project_status(project, home)["release"], "test-b")
+            self.assertEqual(overlay.read_text(encoding="utf-8"), "owner overlay")
+            self.assertEqual(policy.read_text(encoding="utf-8"), '{"owner":"existing"}')
 
     def test_codex_plugin_marketplace_includes_the_trusted_session_start_hook(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

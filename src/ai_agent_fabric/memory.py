@@ -11,7 +11,7 @@ from .project_state import state_path
 
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
-CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"}
+CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation", "maintenance"}
 MEMORY_SCHEMA_VERSION = 13
 SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 SAFE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")

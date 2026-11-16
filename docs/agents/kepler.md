@@ -10,6 +10,9 @@ external mutations, grant approval, implement a change, or expand a spec. A find
 outside scope becomes a backlog proposal or requires an explicit human amendment;
 after amendment, Plato revises the plan and Kepler issues a fresh verdict.
 
+Each actionable finding identifies supporting evidence, impact and a concrete way to
+verify it. Unsupported speculation remains an uncertainty, not a blocking fact.
+
 **Inputs:** spec, research, plan, relevant project policy.
 **Output:** claim challenged, evidence gaps, risks, safer alternative, verdict.
 **Model policy:** standard capability, minimize cost; higher capability only for an

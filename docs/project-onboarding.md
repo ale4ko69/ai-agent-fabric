@@ -63,16 +63,16 @@ client-independent override. The status reports `unbound`, `partial`, `invalid`,
 
 ```text
 # First action after opening or cloning a repository.
-<fabric-release>/bin/ai-agent-fabric project status <project-root> --json
+ai-agent-fabric project status <project-root> --json
 
 # Only after status says `bound`: reveal read-only contract paths for this pinned release.
-<fabric-release>/bin/ai-agent-fabric project context <project-root> --json
+ai-agent-fabric project context <project-root> --json
 
-# Show exactly what the current release would create.
-<fabric-release>/bin/ai-agent-fabric project init <project-root> --client codex --preview
+# Show the relevant project paths before initialization.
+ai-agent-fabric project init <project-root> --client codex --preview
 
 # After review, create the project binding and project-owned state.
-<fabric-release>/bin/ai-agent-fabric project init <project-root> --client codex
+ai-agent-fabric project init <project-root> --client codex
 ```
 
 Replace `codex` with `copilot` or `claude` when that is the active client surface.
@@ -110,7 +110,8 @@ prevents an older command path from creating project state without a release bin
 
 ## Existing repositories
 
-For a cloned repository, initialization preserves existing files. If `.agent-fabric`,
-`fabric-binding.json`, or `project-overlay.md` already exists, it stops rather than
-overwriting it. The user can inspect that state, bind a different project intentionally,
-or use the project update/rollback lifecycle.
+For a cloned repository, initialization refuses to replace an existing binding or
+project overlay. An existing `.agent-fabric` directory alone does not cause a stop:
+the initializer preserves existing profile and config files and may initialize or
+migrate local memory. Inspect partial state and the preview before choosing whether to
+continue. Existing bound projects use the update/rollback lifecycle.

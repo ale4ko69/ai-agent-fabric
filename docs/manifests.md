@@ -67,5 +67,6 @@ client or a model vendor exists.
 
 Hooks are selected by the concrete client runtime and its capabilities. Model routing is
 project-local policy: it decides which model a role may use, but it does not by itself
-grant a lifecycle hook or access to project state. The initial release declares hooks
-unsupported until a client-specific implementation is reviewed and shipped.
+grant a lifecycle hook or access to project state. The Codex adapter declares its
+plugin-owned read-only `SessionStart` implementation; inspect the pinned release's
+manifest for each other client instead of assuming hook support.

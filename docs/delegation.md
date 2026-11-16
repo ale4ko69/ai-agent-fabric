@@ -35,3 +35,9 @@ dispatched request, then records a concise summary and typed
 references to artifacts, findings, and decisions. A specialist may submit it to the
 local outbox, but only Socrates can acknowledge it into the memory record. Both
 envelopes reject secret-like keys and common credential formats before persistence.
+
+Every agent authorized to edit files inspects their current state before an edit and
+preserves the owner's and other agents' changes. When the intended edit conflicts with
+the current file, stop on that file, report the conflict and agree on its resolution;
+do not silently overwrite or revert another person's work. This operational contract
+does not claim a universal atomic guarantee against all concurrent processes.

@@ -10,7 +10,7 @@
       "type": "object",
       "required": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"],
       "propertyNames": {
-        "enum": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation"]
+        "enum": ["orchestrator", "explore", "plan", "opponent", "dev", "review", "validation", "maintenance"]
       },
       "additionalProperties": {
         "type": "object",

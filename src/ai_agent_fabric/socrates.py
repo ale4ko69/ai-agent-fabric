@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .guards import guard_definition
-from .memory import _persist_guard_failure, advance_task_step, resolve_guard_failure
+from .memory import _persist_guard_failure, advance_task_step, resolve_guard_failure, restore
 
 
 def record_guard_failure(
@@ -58,3 +58,26 @@ def record_harness_signal(
     from .harness import _record_signal
 
     return _record_signal(project_root, category, task_id, artifact)
+
+
+def diagnose(project_root: Path, session_id: str) -> dict[str, Any]:
+    """Describe durable task state and next action without attempting recovery."""
+    snapshot = restore(project_root, session_id)
+    lifecycle = snapshot.get("lifecycle")
+    if lifecycle is None:
+        return {"status": "unknown", "reason": "lifecycle-missing", "recommended_action": "inspect-task-state", "observed": {"session_id": session_id}}
+    continuation = lifecycle["continuation"]
+    kind = continuation["kind"]
+    return {
+        "status": lifecycle["status"],
+        "reason": continuation.get("reason", "workflow-running"),
+        "recommended_action": continuation.get("recommended_action", "continue-current-step"),
+        "observed": {
+            "session_id": session_id,
+            "next_action": lifecycle["next_action"],
+            "continuation": kind,
+            "guard_failures": snapshot["guard_failures"],
+            "guard_outcomes": snapshot["guard_outcomes"],
+            "guard_resolutions": snapshot["guard_resolutions"],
+        },
+    }

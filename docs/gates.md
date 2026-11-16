@@ -11,11 +11,14 @@ evidence, but may not redefine a gate, transition, or required evidence name.
 | `scope` | `implementation-continues` | `approved-spec`, `scope-check` |
 | `review` | `review-complete` | `changed-artifacts`, `review-result` |
 | `validation` | `task-close-ready` | `validation-evidence` |
-| `close-out` | `rollout-ready` | `close-out-evidence` |
-| `rollout` | `archived` | `delivery-evidence`, `archive-record` |
+| `close-out` | `archived` | `close-out-evidence`, `archive-record` |
 | `resume` | `resumed` | `task-state`, `memory-restore` |
 
-`harness checkpoint <project> --gate <id> --evidence '["..."]' [--home <fabric-home>]` reads the gate
+The task checklist may also contain a `rollout` step. It is a lifecycle step, not a
+separate checkpoint in this registry; its delivery evidence is recorded through the
+task workflow.
+
+`harness checkpoint <project> --session <task-id> --gate <id> --evidence '["..."]' [--home <fabric-home>]` reads the gate
 registry from the release pinned by the project binding. It rejects unknown gates,
 missing, duplicate, or unexpected evidence names, and unbound projects. On success it appends only
 the gate identifier, transition, and evidence names to

@@ -18,7 +18,7 @@
     },
     "enabled_packs": {
       "type": "array",
-      "items": {"enum": ["documentation", "ui-ux", "ui-verification", "validation", "knowledge-publication"]},
+      "items": {"enum": ["documentation", "ui-ux", "ui-verification", "validation", "knowledge-publication", "maintenance"]},
       "uniqueItems": true
     }
   }

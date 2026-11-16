@@ -118,12 +118,12 @@ repository, or enable a hook to compensate.
 
 ## Hooks and Harness
 
-The baseline manifests declare no installed Fabric hook. Validate the launcher-based
-Harness flow only: signal -> retrospective input -> Kepler/human artifacts -> close
-retrospective. The cursor must be project-local, advance only after approved artifacts,
-and leave signals recorded after the sampled watermark for the next run. Native hook
-validation is a separate future adapter gate that must name a supported client version,
-event, delivery method, rollback, and uninstall procedure.
+The Codex adapter declares a plugin-owned, read-only `SessionStart` hook; Copilot and
+Claude adapters do not declare an installed Fabric hook. Validate the launcher-based
+Harness flow: signal -> retrospective input -> Kepler/human artifacts -> close
+retrospective. The cursor must remain project-local and leave later signals for the next
+run. Test the Codex hook separately for the selected client version and trust state;
+an untested client or host row remains unverified.
 
 ## Completion record
 
