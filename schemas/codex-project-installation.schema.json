@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project-local Codex symbolic-link ownership",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "mode", "client", "project_root", "fabric_release",
+    "release_manifest_sha256", "format_revision", "preview_sha256",
+    "directories", "links", "desktop_discovery", "claim_restore"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"const": "codex-project"},
+    "client": {"const": "codex"},
+    "project_root": {"type": "string", "minLength": 1},
+    "fabric_release": {
+      "type": "string",
+      "pattern": "^(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|$))[0-9A-Za-z](?:[0-9A-Za-z._+-]*[0-9A-Za-z_+-])?(?![\\s\\S])"
+    },
+    "release_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "format_revision": {"const": "d52a39b307b77e81cd272d08189341d944542b82"},
+    "preview_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "desktop_discovery": {"const": "unverified"},
+    "claim_restore": {"const": "unverified"},
+    "directories": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {"enum": [".codex", ".codex/agents", ".agents", ".agents/skills"]},
+      "allOf": [
+        {"contains": {"const": ".codex"}},
+        {"contains": {"const": ".codex/agents"}}
+      ]
+    },
+    "links": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "uniqueItems": true,
+      "description": "Runtime additionally verifies exact persona order, release identity, source/target pairing and native symlink observations.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "target", "kind"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?:\\.codex/agents/(?:socrates|aristotle|plato|kepler|heracles|athena|euclid|metis)\\.toml|\\.agents/skills/agent-fabric-project)(?![\\s\\S])"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^(?:\\.\\./){2}\\.agent-fabric/runtime/releases/(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/))[0-9A-Za-z](?:[0-9A-Za-z._+-]*[0-9A-Za-z_+-])?/(?:adapters/codex-project/agents/(?:socrates|aristotle|plato|kepler|heracles|athena|euclid|metis)\\.toml|skills/project-entry)(?![\\s\\S])"
+          },
+          "kind": {"enum": ["file", "directory"]}
+        }
+      }
+    }
+  }
+}

@@ -28,8 +28,18 @@ commands, integrations, delivery process, local acceptance criteria, and local p
 A profile cannot alter the Fabric's safety rules, shared gate semantics, or install
 global state.
 
-The Fabric itself is a versioned user-level distribution; a project binds to one
-compatible release and supplies a local overlay. This is distinct from global project
+The Fabric is normally a versioned user-level distribution; a project binds to one
+compatible release and supplies a local overlay. An explicit `project install` instead
+places a runtime-only release, registry and pinned launcher under that target's
+`.agent-fabric/runtime`, with ownership at `.agent-fabric/project-installation.json`.
+Both modes reuse the same binding and current memory schema. Project-only runtime
+installation pre-renders dormant Codex persona TOMLs from the canonical profiles and
+readable companions, and retains only the governed project-entry skill. These are
+covered by the release manifest before any client link is installed. Runtime installation
+does not activate a client, install a Desktop plugin or add an automated Socrates
+handoff. Its launcher pins the project, home and release and rejects
+distribution/bootstrap commands. Missing or damaged local ownership never falls back
+to a global installation. This is distinct from global project
 configuration: no project-specific facts, memory, tasks, or credentials enter the
 common distribution. See [global distribution and project binding](global-distribution.md)
 and the [memory boundary](memory.md).
@@ -152,6 +162,20 @@ initialization requires an explicit `--client` choice. User-level client adapter
 an explicit installation mode with their own manifest, ownership record, preview,
 rollback, and uninstall. They may use a declared link, import, or wrapper. Project
 configuration remains solely under `.agent-fabric`.
+
+The separate project-only runtime has `client_activation: none`, even with `--client
+codex`. Client markers do not authorize any client write. A subsequent, separately
+previewed `project codex-install` may create only relative per-persona symlinks under
+`.codex/agents`, the `.agents/skills/agent-fabric-project` entry, and local ownership.
+It refuses existing `.codex` state rather than merging configuration or instructions.
+The adapter never rewrites the release, runtime receipt or task database.
+
+Adapter file installation, Desktop discovery, and real-chat claim/restore are distinct
+states. Only the first is filesystem-testable here; both Desktop states remain
+`unverified`. The project entry requires explicit/manual transfer to a real separate
+chat, its actual thread identity and the existing claim guard. Native subagents—even a
+persona named Socrates—are not task chats and cannot substitute for that transfer.
+Unavailable identity or exact reopening is a stop, not an invitation to invent an API.
 
 A hook is also adapter-owned rather than a global assumption. The release defines safe
 event semantics; the selected adapter may implement a compatible client hook only when

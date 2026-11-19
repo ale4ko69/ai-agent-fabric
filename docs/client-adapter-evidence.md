@@ -30,3 +30,34 @@ hook implementation**. It does not claim that the vendor client lacks a hook API
 routing never enables a hook. A model selection changes the role's allowed model only;
 the selected client, its installed version, host, and adapter manifest decide whether a
 specific hook can be installed.
+
+## Project-local Codex source contract
+
+**Source review:** 2026-11-19, OpenAI's public `openai/codex` revision
+`d52a39b307b77e81cd272d08189341d944542b82` (pinned, not a moving `main` link).
+This establishes a testable source-level contract, **not verification of an installed
+Codex Desktop build**:
+
+- [Agent role TOML parsing](https://github.com/openai/codex/blob/d52a39b307b77e81cd272d08189341d944542b82/codex-rs/agent-roles/src/agent_role_config.rs):
+  standalone roles use `name`, `description` and non-empty
+  `developer_instructions`; remaining configuration is a Codex config layer.
+  Fabric emits only those three fields, with no guessed model/tool/sandbox settings.
+- [Role loading](https://github.com/openai/codex/blob/d52a39b307b77e81cd272d08189341d944542b82/codex-rs/agent-roles/src/loader.rs)
+  scans each applicable config folder's `agents` directory;
+  [discovery](https://github.com/openai/codex/blob/d52a39b307b77e81cd272d08189341d944542b82/codex-rs/agent-roles/src/discovery.rs)
+  selects `.toml` files. The planned repository surface is `.codex/agents`.
+  Whether a particular trusted Desktop project exposes these linked files must be
+  observed in that build; Fabric does not create or merge `config.toml` to force it.
+- [Repository skill roots](https://github.com/openai/codex/blob/d52a39b307b77e81cd272d08189341d944542b82/codex-rs/ext/skills/src/host_roots.rs)
+  include `.agents/skills` between project root and working directory.
+  [Skill discovery](https://github.com/openai/codex/blob/d52a39b307b77e81cd272d08189341d944542b82/codex-rs/ext/skills/src/loader/discovery.rs)
+  has an explicit directory-symlink policy. This is not a guarantee of how every
+  Desktop executor, sandbox, trust setting or filesystem observes links.
+
+The installer verifies native symlink type, relative target and readable local
+release content only. Both `desktop_discovery` and `claim_restore` remain
+`unverified`. It does not invoke an app server, use an automated Desktop chat API,
+or equate native subagents with visible, separately claimed Socrates chats.
+Live evidence must record the actual Desktop version, trust state, all eight
+discovered personas, the governed skill, and genuine thread identity/reopening—or
+report a precise unsupported surface and stop.

@@ -82,6 +82,21 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(restored["memory"]["session"]["status"], "awaiting-socrates-chat")
         self.assertEqual(restored["memory"]["socrates_chat"]["status"], "awaiting-claim")
 
+    def test_explicit_chat_binding_is_preserved_by_restore_and_cannot_be_substituted(self) -> None:
+        # Fixture IDs проверяют guard, а не утверждают наличие реальных Desktop chat identities.
+        start_task(self.project, "Manual transfer fixture", "small-bug", "manual-transfer")
+        pending = restore_task(self.project, "manual-transfer")
+        self.assertEqual(pending["memory"]["socrates_chat"]["status"], "awaiting-claim")
+        self.assertIsNone(pending["memory"]["socrates_chat"]["thread_id"])
+        with self.assertRaises(PermissionError):
+            transition_step(self.project, "manual-transfer", "intake", "in-progress")
+        claim_socrates_chat(self.project, "manual-transfer", "fixture-separate-chat")
+        restored = restore_task(self.project, "manual-transfer")
+        self.assertEqual(restored["memory"]["socrates_chat"]["thread_id"], "fixture-separate-chat")
+        with self.assertRaisesRegex(ValueError, "different Socrates chat"):
+            claim_socrates_chat(self.project, "manual-transfer", "fixture-native-subagent")
+        self.assertEqual(restore_task(self.project, "manual-transfer")["memory"]["socrates_chat"]["thread_id"], "fixture-separate-chat")
+
     def test_russian_start_has_one_ascii_package_session_and_lifecycle(self) -> None:
         result = start_task(self.project, "Проверить и упорядочить каталог компонентов", "small-bug")
         task_id = "review-and-organize-component-catalog"

@@ -28,12 +28,38 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DistributionLifecycleTest(unittest.TestCase):
+    def test_global_release_and_binding_keep_existing_adapter_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / "home"
+            project = root / "project"
+            project.mkdir()
+            install_release(SOURCE_ROOT, home, "test-global-compatible")
+            bind_project(project, "test-global-compatible", "codex", home)
+            self.assertFalse((project / ".agent-fabric/project-installation.json").exists())
+            self.assertFalse((project / ".agent-fabric/runtime").exists())
+            status = project_status(project, home)
+            self.assertEqual(status["status"], "bound")
+            self.assertNotIn("client_activation", status)
+            context = project_context(project, home)
+            self.assertEqual(context["shared_contracts"]["adapter_manifest"], str(home / "releases/test-global-compatible/adapters/codex/adapter-manifest.json"))
+            self.assertNotIn("installation_mode", context)
+            self.assertTrue((home / "bin/ai-agent-fabric.py").is_file())
+            self.assertTrue((home / "adapters/codex/bootstrap.md").is_file())
+
     def test_release_preview_includes_client_records_and_preserves_managed_entry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             home, entry = root / "home", root / "AGENTS.md"
             entry.write_text("Owner instructions\n", encoding="utf-8")
-            with mock.patch.object(distribution, "client_entry_point", return_value=entry):
+            ready = {
+                "ready": True, "client": "codex", "surface": "test fixture",
+                "executable": "fixture-only", "version": "fixture", "entry_point": str(entry),
+            }
+            with (
+                mock.patch.object(distribution, "client_entry_point", return_value=entry),
+                mock.patch.object(distribution, "client_preflight", return_value=ready),
+            ):
                 install_release(SOURCE_ROOT, home, "test-old")
                 distribution.enable_client(home, "codex", "managed-block")
                 original_entry = entry.read_bytes()

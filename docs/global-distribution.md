@@ -2,12 +2,13 @@
 
 ## Decision
 
-AI Agent Fabric is installed once as a versioned user-level distribution. It provides
+In the global mode, AI Agent Fabric is installed once as a versioned user-level distribution. It provides
 the common agent structure for every project: the canonical role profiles, shared
 memory protocol, workflow rules, schemas, and client renderers. A project is bound to
 that installation but keeps every project-specific fact in its own repository.
 
-This is a two-layer system, not a choice between a "global" and a "project" Fabric.
+This global mode is a two-layer system. The separate, explicit runtime-only project
+installer is described below; it does not activate a project client adapter.
 
 ```text
 user-level Fabric release
@@ -51,14 +52,14 @@ overridden at installation time:
 | Windows | `%LOCALAPPDATA%\\AI-Agent-Fabric` | Per-user mutable application data; no administrator access or source checkout required |
 | Linux / WSL | `${XDG_DATA_HOME:-~/.local/share}/ai-agent-fabric` | Per-user application-data convention |
 
-The source checkout is never used as a runtime installation. The development repository
+The source checkout is never used in place as a runtime installation. The development repository
 remains separate from the user-level installer, which creates releases in the Fabric
 home.
 
 For first installation or a specifically reviewed cross-version bootstrap, the source
 checkout provides `python scripts/run-fabric.py`. This helper adds that checkout's
-`src/` directory to its own Python process; it is not installed into a project. The
-installed global launcher remains the normal entry point after installation.
+`src/` directory to its own Python process. The installed global launcher remains the
+normal entry point after a user-level installation.
 
 Cross-version installer behavior must be verified before upgrading. The 0.1.29
 installer generates contracts and selects assets from its own runtime, so using it
@@ -142,19 +143,20 @@ belong in version control.
 | `distribution install-release` | Install a versioned common Fabric release | Only the chosen Fabric home |
 | `distribution enable-client` | Connect a client’s user-level entry point to the selected release | Only the explicitly approved client configuration location and installer manifest |
 | `project init` | Create a project overlay and pin a release | Only the target repository |
+| `project install` | Install a runtime-only release in an existing fresh target | Only the target's `.agent-fabric`; no client activation |
 | `distribution update-project` | Move one project to a reviewed compatible release | Only its binding and declared migration artifacts |
 | `distribution rollback-project` | Restore a reviewed previous project binding | Only its binding and a new recoverable backup |
 | `distribution rollback-client` | Restore the preceding installer-owned client artifact | Only the selected client entry point and its ownership record |
 | `distribution uninstall-client` | Remove an adapter owned by this installer | Only manifest-owned client artifacts |
 
-No command may switch from project binding to user-level installation implicitly.
+No command may switch from project installation or binding to user-level installation implicitly.
 Every release, project-binding, and client-adapter mutation has a preview; ownership
 records and backups make replacement, rollback, and uninstall reversible.
 
 `<fabric-home>/bin/ai-agent-fabric` is the single global Bash launcher. It reads the
 current release from `installation.json` and delegates to that release's immutable
-launcher. The client bootstrap names this global launcher, so a Fabric command is never
-installed inside a project. A project path only selects project-owned context: its
+launcher. The client bootstrap names this global launcher; this rule describes user-level mode only.
+A project path in global mode selects project-owned context: its
 binding, local memory, task packages, specs, and Harness trace. The immutable launcher
 sets its own `AI_AGENT_FABRIC_HOME` and `PYTHONPATH`, then selects `python3`, with
 `python` as a fallback, choosing the first interpreter that is Python 3.10 or newer.
@@ -167,6 +169,9 @@ bootstrap and the global launcher together. Existing client links therefore pick
 active shared Fabric while each project remains pinned through its own binding.
 
 ## Links, imports, and wrappers
+
+The following client-delivery mechanisms belong to the user-level distribution.
+Project-only installation does not invoke them.
 
 A client adapter declares one of four supported delivery methods for every client
 surface:
@@ -218,6 +223,97 @@ updates, and configuration cannot be redirected outside the selected project.
 Secret storage is separate from adapter delivery: a project profile explicitly declares
 only a project-local secret destination. External credential stores are not part of the
 baseline and require a separately designed project integration.
+
+## Project-only runtime
+
+`project install <target> --source <source> --client codex` is an explicit alternative
+to installing a user-level runtime. Run the selected source's own
+`python -I -S -B scripts/run-fabric.py`, first with `--preview --json`, then with
+`--apply --expected-preview-sha256 <preview_sha256> --json`.
+No default source, global release lookup, cross-source subprocess, download, or
+system-temporary staging is used. Source must be reviewed and trusted; a digest is
+change detection, not a signature or a sandbox.
+
+```text
+<existing-target>/.agent-fabric/
+  project-installation.json       # project-runtime ownership; client_activation: none
+  fabric-binding.json             # existing binding schema, pinned local release
+  profile.json
+  project-overlay.md
+  config/
+  memory.db
+  runtime/
+    installation.json             # existing registry schema, local home only
+    bin/ai-agent-fabric.py          # pinned, isolated Python launcher
+    releases/<version>/
+      src/
+      core/
+      schemas/
+      docs/
+      release-manifest.json
+```
+
+Runtime source, contracts, schemas and documentation are copied. The release also
+retains the existing Bash secret-entry helper, the governed project-entry skill and
+once-rendered dormant Codex persona TOMLs. It omits global client delivery, plugins,
+hooks, legacy global workflow skills, source installer scripts and global launchers.
+No repository-native instruction file or user/global client file
+is written. `project context` reports `adapter_manifest: null` and
+`client_activation: none`; no Codex Desktop compatibility or automatic chat handoff
+is claimed.
+
+### Optional project adapter stage
+
+After runtime installation, `project codex-install` has its own read-only preview and
+explicit digest-bound apply. The scoped launcher creates relative native symlinks:
+
+```text
+.codex/agents/<persona>.toml
+  -> ../../.agent-fabric/runtime/releases/<version>/adapters/codex-project/agents/<persona>.toml
+.agents/skills/agent-fabric-project
+  -> ../../.agent-fabric/runtime/releases/<version>/skills/project-entry
+.agent-fabric/codex-project-installation.json
+```
+
+Personas are `socrates`, `aristotle`, `plato`, `kepler`, `heracles`, `athena`,
+`euclid`, `metis`. Generation happens during runtime planning, before immutable
+manifest hashing, not during client activation. The adapter stage never modifies
+the release, runtime ownership, binding or task memory.
+
+Any existing `.codex` blocks this stage; no config, instruction or agent merging is
+performed. Existing unrelated `.agents/skills` entries remain untouched, and all
+parents must be ordinary owned directories. A pending local ownership record is
+written before link creation; failure leaves it and any partial paths for explicit
+manual inspection. There is no junction/copy/elevation fallback.
+
+Successful file installation means the expected native symlinks can be read and
+resolved by the runtime. It does not attest app discovery or a separate Socrates
+chat. Both Desktop discovery and claim/restore remain `unverified`. Root can only
+transfer manually to a real separate chat using its actual Desktop thread ID; if
+identity or exact reopening is unavailable, stop. No fictitious Desktop API or
+native-subagent substitution is provided.
+
+The local Python launcher verifies its embedded release-manifest digest and every
+release file before importing runtime code. It rejects another target or `--home`,
+all `distribution` and `bootstrap` commands, and `project init/install`. Environment
+overrides cannot select a global home or another release. Ordinary user-level
+installation, adapters and launchers retain their existing behaviour.
+
+Preview enumerates every file and directory relative to the target, plus possible
+`memory.db-journal`, `memory.db-wal` and `memory.db-shm` sidecars. No staging files or
+JSON replacement temporaries are needed. Apply rebuilds the source snapshot and
+preview digest before creating state. Any pre-existing `.agent-fabric` entry,
+including an empty directory or dangling link, blocks both preview and apply.
+Missing targets, traversal, links/reparse points in selected paths, hard-linked input
+files and ownership conflicts fail closed. The new state tree is private; writes
+are exclusive rather than replacements. This is not a sandbox against another
+process running as the same owner.
+
+Ownership is published last. An interrupted install is intentionally left for manual
+inspection and cannot be overwritten by retry. There is no project-only
+update/rollback/uninstall lifecycle in this version. Runtime state and its SQLite
+sidecars should not be committed; no `.gitignore` or other file outside
+`.agent-fabric` is edited by this installer.
 
 ## Update policy
 

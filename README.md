@@ -1,7 +1,7 @@
 # AI Agent Fabric
 
 Portable, project-local infrastructure for AI-agent teams. It provides a versioned
-user-level runtime with shared roles, durable task state, bounded delegation, and
+user-level or explicitly project-only runtime with shared roles, durable task state, bounded delegation, and
 evidence-based workflow gates. Every target repository binds to one Fabric release and
 keeps its own profile, tasks, memory, Harness data, and integration settings.
 
@@ -22,6 +22,49 @@ project never reads another project's task state, memory, or retrospective signa
   client-specific adapters and the same portable project contracts.
 
 ## Quick start
+
+### Project-only runtime (no client activation)
+
+From the reviewed, trusted source checkout, with Python 3.10 or later:
+
+```bash
+python -I -S -B scripts/run-fabric.py project install /path/to/project --source . --client codex --preview --json
+python -I -S -B scripts/run-fabric.py project install /path/to/project --source . --client codex --apply --expected-preview-sha256 <preview_sha256> --json
+python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project status /path/to/project --json
+```
+
+The target must already exist and must have **no `.agent-fabric` entry at all**.
+Preview writes nothing; review its project-relative files, directories and possible
+SQLite sidecars before applying the returned digest. Everything installed stays under
+the target's `.agent-fabric`, without global client files or a global installation.
+`client_activation: none` is intentional: runtime installation does not activate Codex
+Desktop, a plugin or a Socrates chat handoff. It prepares dormant persona TOML files
+and a governed project-entry skill inside the immutable release. Existing native project
+instructions remain untouched. See [project-only onboarding](docs/project-onboarding.md#project-only-runtime).
+
+### Optional project-local Codex adapter
+
+After the separate runtime installation, use its pinned launcher:
+
+```bash
+python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-install /path/to/project --preview --json
+python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-install /path/to/project --apply --expected-preview-sha256 <adapter_preview_sha256> --json
+python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-status /path/to/project --json
+```
+
+This installs eight relative persona symlinks under `.codex/agents` and one governed
+entry under `.agents/skills`, with local ownership metadata. It refuses **any existing
+`.codex`**, never touches global client configuration, and never falls back to copying,
+junctions or elevation. Existing unrelated project skills are preserved.
+
+`file_installation: installed` means only that the native links are observable on the
+filesystem. **Desktop discovery and claim/restore are unverified.** Root transfers a
+task manually to a real separate Socrates chat; only that chat may claim with its real
+Desktop thread ID. If identity or reopening is unavailable, stop—do not invent an ID,
+call a fictitious Desktop API or substitute native subagents.
+See [the next-machine procedure](docs/using-fabric.md#project-local-codex-next-machine-validation).
+
+### User-level distribution and client adapters
 
 For a first installation from a source checkout with Python 3.10 or later, inspect and
 install the versioned release, then preview and enable the selected client adapter:
@@ -105,6 +148,8 @@ selected adapter. See [architecture](docs/architecture.md) and
 [project profiles](docs/project-profile.md).
 
 ### Global-to-project configuration flow
+
+This diagram describes the user-level adapter mode, not the project-only runtime.
 
 ```mermaid
 flowchart TD

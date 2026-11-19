@@ -11,6 +11,7 @@ from ai_agent_fabric.distribution import (
 from ai_agent_fabric.gates import default_gates, validate_gates
 from ai_agent_fabric.installer import default_project_profile, validate_project_profile
 from ai_agent_fabric.model_routing import default_routing, validate_routing
+from ai_agent_fabric.project_install import validate_project_installation
 from ai_agent_fabric.work_tracking import default_config, validate_config
 
 
@@ -25,6 +26,7 @@ class ContractValidationTest(unittest.TestCase):
             validate_adapter_manifest,
             validate_installation_manifest,
             validate_project_binding,
+            validate_project_installation,
         )
         for validator in validators:
             with self.subTest(validator=validator.__name__):
