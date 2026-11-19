@@ -598,8 +598,8 @@ def _mvp_decision_digest(project_root: Path, session_id: str, artifact: str) -> 
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _require_new_product_mvp_approval(connection: sqlite3.Connection, project_root: Path, session_id: str) -> None:
-    """Перед lifecycle/delegation проверить последнее решение и неизменность spec/evidence."""
+def _require_new_product_mvp_approval(connection: sqlite3.Connection, project_root: Path, session_id: str) -> dict[str, object] | None:
+    """Return the approved contract for lifecycle or delegation checks."""
     scope = _new_product_mvp_scope(connection, project_root, session_id)
     if scope is None:
         return
@@ -607,15 +607,19 @@ def _require_new_product_mvp_approval(connection: sqlite3.Connection, project_ro
         "SELECT evidence_json FROM records WHERE session_id=? AND kind='new-product-mvp-approved' "
         "AND actor='orchestrator' ORDER BY id DESC LIMIT 1", (session_id,)
     ).fetchone()
-    message = "New Product planning requires current MVP owner approval; use socrates approve-mvp --preview"
+    message = (
+        "New Product planning requires current MVP owner approval bound to mvp-scope.json; "
+        "use socrates approve-mvp --preview. Legacy spec-only approval is insufficient. "
+        "Record the exact prior explicit chat decision if it covers this contract; otherwise obtain "
+        "an owner decision on the change. Do not ask a duplicate question."
+    )
     if row is None:
         raise PermissionError(message)
     try:
         approval = json.loads(row["evidence_json"])
         if (
             not isinstance(approval, dict)
-            or not all(approval.get(key) == value for key, value in scope.items())
-            or type(approval.get("spec_revision")) is not int
+            or not all(approval.get(key) == scope[key] for key in ("task_id", "scope_artifact", "scope_sha256", "scope"))
             or approval.get("approved") is not True
             or approval.get("approved_by") != "human"
             or approval.get("approval_method") != "agent-attested-chat"
@@ -626,17 +630,17 @@ def _require_new_product_mvp_approval(connection: sqlite3.Connection, project_ro
             raise PermissionError(message)
     except (OSError, ValueError):
         raise PermissionError(message) from None
+    return scope
 
 
 def attest_new_product_mvp_approval(
-    project_root: Path, session_id: str, reviewed_spec_sha256: str, reviewed_spec_revision: int,
+    project_root: Path, session_id: str, reviewed_scope_sha256: str,
     chat_reference: str, decision_artifact: str, actor: str = "orchestrator", *, thread_id: str,
 ) -> dict[str, Any]:
     """Record an owner decision attested by the task's claimed Socrates chat.
 
-    The caller-supplied thread ID must match the stored claim. This check is not
-    independent authentication of the Desktop chat or owner, and it does not
-    authorize implementation.
+    An earlier explicit decision must cover the exact structured contract.
+    Comparing thread IDs does not authenticate the chat or owner independently.
     """
     if actor != "orchestrator" or not _safe_identifier(session_id):
         raise ValueError("only the orchestrator may attest MVP owner approval")
@@ -656,8 +660,11 @@ def attest_new_product_mvp_approval(
             scope = _new_product_mvp_scope(connection, project_root, session_id)
             if scope is None:
                 raise ValueError("MVP approval requires an existing New Product task lifecycle")
-            if type(reviewed_spec_revision) is not int or reviewed_spec_revision != scope["spec_revision"] or reviewed_spec_sha256 != scope["spec_sha256"]:
-                raise ValueError("The MVP spec changed after preview; present the new scope and obtain owner approval again")
+            if reviewed_scope_sha256 != scope["scope_sha256"]:
+                raise ValueError(
+                    "The MVP contract changed after preview; inspect the new preview and record an explicit "
+                    "owner decision covering it. Reuse an existing exact decision; do not ask twice."
+                )
             evidence = {
                 **scope,
                 "approved": True,
@@ -706,12 +713,18 @@ def submit_request(project_root: Path, request: dict[str, Any], actor: str = "or
     connection = connect(project_root, create=False)
     try:
         _require_current_schema_connection(connection)
+        payload = dict(request)
         if request["agent"] == "plan":
-            _require_new_product_mvp_approval(connection, project_root, request["session_id"])
+            scope = _require_new_product_mvp_approval(connection, project_root, request["session_id"])
+            if scope is not None:
+                if request["scope_artifact"] != scope["scope_artifact"] or request["task_id"] != request["session_id"]:
+                    raise ValueError("New Product Plan request requires this task's authoritative mvp-scope.json scope_artifact")
+                # Reapproval must not rebind an already queued request to a new scope.
+                payload["_new_product_mvp_scope_sha256"] = scope["scope_sha256"]
         cursor = connection.execute(
             "INSERT INTO delegation_requests(idempotency_key, session_id, agent, payload_json) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(idempotency_key) DO NOTHING",
-            (request["idempotency_key"], request["session_id"], request["agent"], json.dumps(request, ensure_ascii=False, sort_keys=True)),
+            (request["idempotency_key"], request["session_id"], request["agent"], json.dumps(payload, ensure_ascii=False, sort_keys=True)),
         )
         connection.commit()
         return cursor.rowcount == 1
@@ -730,9 +743,47 @@ def pending_requests(project_root: Path, session_id: str) -> list[dict[str, Any]
             "AND NOT EXISTS (SELECT 1 FROM result_outbox AS result WHERE result.request_id=request.idempotency_key) "
             "ORDER BY request.id", (session_id,)
         ).fetchall()
+        requests = []
+        for row in rows:
+            payload = json.loads(row["payload_json"])
+            diagnostic = None
+            if row["agent"] == "plan" and row["status"] == "pending":
+                diagnostic = _new_product_plan_request_diagnostic(connection, project_root, session_id, payload)
+            payload.pop("_new_product_mvp_scope_sha256", None)
+            item = {"idempotency_key": row["idempotency_key"], "agent": row["agent"], "status": row["status"], "payload": payload, "created_at": row["created_at"]}
+            if diagnostic is not None:
+                item["dispatch_guard"] = diagnostic
+            requests.append(item)
+        return requests
     finally:
         connection.close()
-    return [{"idempotency_key": row["idempotency_key"], "agent": row["agent"], "status": row["status"], "payload": json.loads(row["payload_json"]), "created_at": row["created_at"]} for row in rows]
+
+
+def _new_product_plan_request_diagnostic(
+    connection: sqlite3.Connection, project_root: Path, session_id: str, payload: dict[str, Any],
+) -> dict[str, str] | None:
+    """Diagnose an undispatched plan request without changing its stored status."""
+    try:
+        approval_current = True
+        try:
+            scope = _require_new_product_mvp_approval(connection, project_root, session_id)
+        except PermissionError:
+            approval_current = False
+            # Distinguish stale scope from missing approval without granting dispatch.
+            scope = _new_product_mvp_scope(connection, project_root, session_id)
+        if scope is None:
+            return None
+        if (
+            payload.get("_new_product_mvp_scope_sha256") != scope["scope_sha256"]
+            or payload.get("scope_artifact") != scope["scope_artifact"]
+            or payload.get("task_id") != session_id
+        ):
+            return {"state": "obsolete", "reason": "mvp-scope-pin-mismatch", "recommended_action": "replace-plan-request"}
+        if not approval_current:
+            return {"state": "blocked", "reason": "mvp-owner-approval-required", "recommended_action": "record-exact-owner-decision"}
+    except (OSError, ValueError):
+        return {"state": "blocked", "reason": "mvp-scope-unavailable", "recommended_action": "inspect-mvp-scope-preview"}
+    return None
 
 
 def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str = "orchestrator") -> bool:
@@ -744,14 +795,23 @@ def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str
         _require_current_schema_connection(connection)
         with connection:
             row = connection.execute(
-                "SELECT status, agent, session_id FROM delegation_requests WHERE idempotency_key=?", (idempotency_key,)
+                "SELECT status, agent, session_id, payload_json FROM delegation_requests WHERE idempotency_key=?", (idempotency_key,)
             ).fetchone()
             if row is None:
                 raise KeyError(idempotency_key)
-            if row["agent"] == "plan":
-                _require_new_product_mvp_approval(connection, project_root, row["session_id"])
             if row["status"] == "dispatched":
                 return False
+            if row["agent"] == "plan":
+                diagnostic = _new_product_plan_request_diagnostic(
+                    connection, project_root, row["session_id"], json.loads(row["payload_json"]),
+                )
+                if diagnostic is not None:
+                    raise PermissionError(
+                        "New Product Plan request is {state}: {reason}; "
+                        "{recommended_action}. Socrates must replace obsolete requests with a fresh "
+                        "idempotency key after recording the exact owner decision; no duplicate owner approval."
+                        .format(**diagnostic)
+                    )
             connection.execute(
                 "UPDATE delegation_requests SET status='dispatched', dispatched_at=CURRENT_TIMESTAMP WHERE idempotency_key=?",
                 (idempotency_key,),

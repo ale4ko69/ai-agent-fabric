@@ -122,10 +122,9 @@ def main() -> None:
     socrates_mvp = socrates_sub.add_parser("approve-mvp", help="Preview or attest an explicit MVP owner decision before New Product planning")
     socrates_mvp.add_argument("target", type=Path)
     socrates_mvp.add_argument("--session", required=True)
-    socrates_mvp.add_argument("--preview", action="store_true", help="Read the exact spec revision and digest without recording approval")
+    socrates_mvp.add_argument("--preview", action="store_true", help="Read the authoritative structured MVP scope and canonical digest without recording approval")
     socrates_mvp.add_argument("--thread-id", help="Required for approval writes; must match this task's claimed Socrates thread id")
-    socrates_mvp.add_argument("--reviewed-spec-sha256")
-    socrates_mvp.add_argument("--reviewed-spec-revision", type=int)
+    socrates_mvp.add_argument("--reviewed-scope-sha256", help="Exact canonical scope_sha256 from --preview; spec metadata is informational only")
     socrates_mvp.add_argument("--chat-reference", help="Source of the explicit owner decision; agent-attested, not authenticated identity")
     socrates_mvp.add_argument("--artifact", help="Existing decision evidence inside this task's evidence directory")
     socrates_mvp.add_argument("--home", type=Path, default=default_fabric_home())
@@ -420,10 +419,10 @@ def main() -> None:
         if args.preview:
             result = new_product_mvp_preview(args.target, args.session)
         else:
-            if not all((args.thread_id, args.reviewed_spec_sha256, args.reviewed_spec_revision, args.chat_reference, args.artifact)):
-                parser.error("approve-mvp requires --thread-id, --reviewed-spec-sha256, --reviewed-spec-revision, --chat-reference and --artifact; inspect --preview first")
+            if not all((args.thread_id, args.reviewed_scope_sha256, args.chat_reference, args.artifact)):
+                parser.error("approve-mvp requires --thread-id, --reviewed-scope-sha256, --chat-reference and --artifact; inspect --preview first")
             result = attest_new_product_mvp_approval(
-                args.target.resolve(), args.session, args.reviewed_spec_sha256, args.reviewed_spec_revision,
+                args.target.resolve(), args.session, args.reviewed_scope_sha256,
                 args.chat_reference, args.artifact, thread_id=args.thread_id,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)

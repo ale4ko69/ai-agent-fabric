@@ -118,25 +118,26 @@ Work with the owner, not as a one-shot requirements generator:
   scaffolding, dependencies, services, and implementation commands still require the
   ordinary approved plan and implementation gates; “prototype” is not a bypass.
 
-Before normal planning, summarize the proposed MVP in `spec.md`: user value, included
-scope, non-goals, observable acceptance criteria, constraints, and unresolved risks.
-Present that exact proposal to the owner and ask for explicit scope-and-acceptance
-approval. Keep `discovery` open until the owner decides. First obtain the read-only
-scope binding:
+Before normal planning, use `spec.md` for rationale, examples, and risks. Put the
+actual MVP commitments in the task's `mvp-scope.json`: `scope`, `exclusions`,
+`acceptance_criteria`, and `constraints` (`schema_version: 1`). Keep these aligned, but do not change
+the contract for editorial fixes. Use the read-only scope binding:
 
 ```text
 <fabric-launcher> socrates approve-mvp <project-root> --session <task-id> --preview --json
 ```
 
-Present that spec revision and full `spec.md` to the owner. After an explicit approval,
-write a concise task-local decision artifact under this package's `evidence/`, naming
-the accepted scope/acceptance criteria and decision source, not a raw conversation.
+Present the exact contract for a new decision. If the owner already explicitly
+confirmed the same commitments in the conversation, record that decision without
+asking twice. Write concise task-local decision evidence naming the commitments
+and decision source, not a raw conversation. Keep discovery open if approval is
+still needed.
 Then, only in the claimed Socrates chat, record the agent-attested decision. Use
 the current chat's actual thread ID from the client. If the client does not expose
 it, stop without recording approval; do not copy the stored claim as a fallback.
 
 ```text
-<fabric-launcher> socrates approve-mvp <project-root> --session <task-id> --thread-id <current-thread-id> --reviewed-spec-sha256 <preview-digest> --reviewed-spec-revision <preview-revision> --chat-reference <decision-source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
+<fabric-launcher> socrates approve-mvp <project-root> --session <task-id> --thread-id <current-thread-id> --reviewed-scope-sha256 <scope-digest> --chat-reference <decision-source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
 ```
 
 This uses existing task memory records, not another database or approval file format.
@@ -144,10 +145,16 @@ Fabric checks the supplied ID against the stored Socrates claim; it does not
 independently authenticate the current chat or the owner's decision. Summarize the result
 under `## MVP owner decision` in `session-state.md`, but a prose note alone does not
 unlock planning. Discovery cannot be closed or skipped, and planning cannot be
-advanced or delegated, without a current approval record. Any change to `spec.md`,
-its spec revision, or the bound decision artifact invalidates that binding and
-requires a fresh owner decision/attestation. A suggestion, brainstorming answer, or
-interest in a prototype is not approval.
+advanced or delegated, without a current approval record. Editorial `spec.md`
+edits do not revoke approval. Changed commitments need a covering explicit owner
+decision. Preserve the recorded decision evidence unchanged; use a new evidence
+file for a new decision. A suggestion or interest in a prototype is not approval.
+
+Fold intersecting instructions into the same task and update the affected steps.
+Preserve completed work and continue unaffected steps while a decision is pending.
+Use `mvp-scope.json` as Plato's scope artifact. Replace obsolete queued requests
+with fresh keys after the changed contract is approved; do not ask for approval to
+replace a request. Do not automatically cancel or restart already-dispatched work.
 
 Then continue the ordinary planned workflow: evidence/research, Plato plan, independent
 Kepler verdict, explicit owner approval of that reviewed package, scoped implementation,
@@ -172,5 +179,5 @@ succeeded but task creation has not, inspect the binding and resume the task-pre
 step without requiring the now-bound folder to be empty again. Partial initialization
 requires explicit recovery, not a reinstall or cleanup of owner files.
 The durable MVP approval remains in the existing memory audit trail; restore is not
-an approval operation. Preserve its referenced evidence and re-attest only when the
-scope/revision or decision evidence has changed.
+an approval operation. Preserve its exact decision evidence and resume from the
+saved progress, not from intake or an earlier brainstorming step.

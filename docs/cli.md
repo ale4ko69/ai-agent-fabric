@@ -69,17 +69,39 @@ brainstorming begins after claim. Ordinary starts/restores retain their existing
 shape. Restore is read-only and neither restarts discovery nor reinitializes the folder.
 See the [New Product workflow](workflow.md#new-product-opt-in).
 
+New Product adds task-local `mvp-scope.json`, the authoritative MVP contract, distinct
+from editable explanatory `spec.md`. Populate the initially empty contract before
+preview. Its exact fields are:
+
+```json
+{
+  "schema_version": 1,
+  "scope": ["One offline checklist for one user"],
+  "exclusions": ["Synchronization"],
+  "acceptance_criteria": ["A saved checklist opens offline"],
+  "constraints": []
+}
+```
+
+All four content fields are arrays of non-blank strings; `scope` and
+`acceptance_criteria` must be non-empty. Unknown fields and duplicate JSON keys are
+rejected. Object-key order and JSON formatting do not change the canonical SHA-256;
+array order and string content remain part of the contract.
 Before closing or skipping discovery, claimed Socrates previews the exact MVP binding:
 
 ```text
 ai-agent-fabric socrates approve-mvp <project> --session <id> --preview --json
 ```
 
-After presenting that spec to the owner and receiving explicit approval, Socrates
-writes concise decision evidence inside this task's `evidence/` directory, then records:
+Preview is read-only and returns structured `scope`, `scope_sha256`, and
+`scope_artifact`. `spec_sha256` and `spec_revision` are informational, not approval
+inputs. Present the structured contract and relevant explanatory risks to the owner.
+After an explicit decision, write concise evidence inside this task's `evidence/`
+directory, then record it. If the owner already explicitly decided this exact contract
+in chat, cite and record that decision without asking again:
 
 ```text
-ai-agent-fabric socrates approve-mvp <project> --session <id> --thread-id <claimed-thread-id> --reviewed-spec-sha256 <digest> --reviewed-spec-revision <revision> --chat-reference <source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
+ai-agent-fabric socrates approve-mvp <project> --session <id> --thread-id <current-thread-id> --reviewed-scope-sha256 <scope_sha256> --chat-reference <source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
 ```
 
 Approval writes require an explicit `--thread-id` exactly matching this task's stored
@@ -89,19 +111,40 @@ This compares a caller-supplied id with the stored claim; it does not independen
 authenticate the current Codex Desktop chat.
 
 The existing memory `records` table stores this agent-attested approval, bound to the
-task id, full spec digest/revision, and decision-artifact digest. It does not authenticate
-the owner's identity independently. Prose in session state cannot substitute for it.
+task id, authoritative scope path, structured contract/canonical digest, and exact
+decision-artifact digest. It does not authenticate the owner's identity independently.
+Prose in session state cannot substitute for it.
 Missing or stale approval rejects discovery closure/skip, subsequent lifecycle
 transitions, and planning request submission/dispatch without advancing the task.
-Changing the spec, its revision, or the decision artifact requires renewed approval.
+Editorial spec edits or spec-revision increments do not revoke MVP approval. Contract
+changes require an explicit owner decision covering the new contract, not necessarily
+a new question. Decision evidence is still byte-bound; changing it requires a new
+attestation backed by the exact decision, not an automatic refresh.
+Legacy full-spec-only approvals do not authorize a newly populated contract.
+For an existing task, create `mvp-scope.json` from its agreed MVP, preview it, and attest
+the exact prior explicit decision only if it really matches; otherwise resolve the
+changed contract with the owner. There is no database migration or automatic conversion.
 MVP approval never replaces the ordinary Kepler/reviewed-plan implementation approval.
+
+New Product Plan requests must name this task's authoritative `mvp-scope.json` as
+`scope_artifact` and the same task/session id. Enqueue internally pins the approved
+scope digest without adding a public request input. After changed-scope approval,
+old pinned or legacy unpinned queued requests still cannot dispatch. Socrates replaces
+them using a fresh idempotency key and the current approval; no second owner approval
+is needed. `memory pending-requests` and restore retain the old rows and add a bounded
+`dispatch_guard` only for affected pending Plan requests: `state` (`obsolete` or
+`blocked`), `reason`, and `recommended_action`. An obsolete request recommends
+`replace-plan-request`; a missing decision recommends `record-exact-owner-decision`;
+an unavailable contract recommends `inspect-mvp-scope-preview`. This is a read-only
+diagnostic, not a new database status. Unaffected request output shapes are unchanged.
+Already-dispatched work is not cancelled or restarted by this queued-request guard.
 
 ## Socrates and task specifications
 
 | Command | Prerequisites and state change | Typical next step |
 | --- | --- | --- |
 | `socrates claim <project> --session <id> --thread-id <id>` | Prepared task; records its separate chat claim. | Read the durable continuation. |
-| `socrates approve-mvp <project> --session <id> --preview` | New Product on Codex; reads exact MVP spec digest/revision. Without `--preview`, requires explicit `--thread-id` matching this task's claimed Socrates chat, matching reviewed values, decision source and task-local evidence; appends an approval record. | Close discovery through the ordinary step command; normal implementation gates still apply. |
+| `socrates approve-mvp <project> --session <id> --preview` | New Product on Codex; reads structured MVP scope and canonical digest. Without `--preview`, requires explicit `--thread-id` matching this task's claimed Socrates chat, matching `--reviewed-scope-sha256`, decision source and task-local evidence; appends an approval record. | Close discovery through the ordinary step command; normal implementation gates still apply. |
 | `socrates step <project> --session <id> --step <step> --status <status>` | Claimed chat; advances a checklist step. Closing requires existing evidence and a reason. | Follow the returned continuation. |
 | `socrates diagnose <project> --session <id>` | Bound project and existing session; reads state and Guard outcomes only. | Follow the reported next action. |
 | `socrates resolve-guard <project> ...` | Claimed task and existing blocked or escalated Guard; records owner direction and evidence. | Resume the preserved step. |

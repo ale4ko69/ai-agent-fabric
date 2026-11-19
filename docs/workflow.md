@@ -114,22 +114,50 @@ research phase for every idea. An optional question-led prototype must have an a
 learning question, scope, and success signal; executable implementation still needs
 the normal reviewed plan and owner approval.
 
-Before normal planning, Socrates presents the exact MVP scope, non-goals, acceptance
-criteria, and unresolved risks from `spec.md` for explicit owner approval. It keeps
-discovery open until that decision. `socrates approve-mvp --preview` exposes the exact
-spec revision and digest; after the explicit decision, claimed Socrates records an
-agent-attested approval with those reviewed values, a chat reference, and an existing
-decision artifact inside this task's `evidence/` directory. This uses the existing
-memory records and authorization trust model, not a new schema or independent proof
-of owner identity.
+Before normal planning, Socrates fills task-local `mvp-scope.json` with the agreed
+scope, exclusions/non-goals, observable acceptance criteria, and constraints.
+It is the authoritative MVP contract; `spec.md` remains editable explanation including
+user value, rationale, and unresolved risks. The [exact JSON shape](cli.md#explicit-new-product-discovery)
+has no undeclared fields or duplicate keys.
+`socrates approve-mvp --preview` reads that structured scope and its canonical digest;
+spec digest/revision remain informational. Socrates presents the contract and relevant
+risks, keeping discovery open until the owner's explicit decision. If the owner already
+explicitly approved this exact contract in chat, record that decision instead of asking
+again. A suggestion or historical proposal is not a decision on changed scope.
+Claimed Socrates records the agent-attested decision with `--reviewed-scope-sha256`,
+the actual current thread id, a chat reference, and an existing decision artifact inside
+this task's `evidence/`. This uses existing memory records and the authorization trust
+model, not a new database schema or independent proof of owner identity.
 
 The runtime rejects closing or skipping discovery, further lifecycle transitions, and
 planning delegation submission/dispatch without a current MVP approval. The record
-binds the task id, spec revision, full spec digest, and decision-artifact digest.
-Changing any of those inputs requires renewed owner approval. A prose session-state
-note alone cannot unlock planning. A task-start audit marker preserves the opt-in even
-if its markdown marker is subsequently removed. This gate authorizes planning only,
-not implementation; all ordinary reviewed-plan approvals remain separate.
+binds the task id, authoritative scope path, structured contract/canonical digest, and
+exact decision-artifact digest. Formatting the JSON, editing explanatory prose, or
+incrementing spec revision does not revoke MVP approval. Changing the contract requires
+an explicit owner decision covering the change; reuse an already explicit matching
+decision without a duplicate question. Changed decision evidence still requires
+re-attestation, never silent acceptance. Legacy approvals bound only to full spec text
+fail closed: populate the structured contract from the agreed MVP and explicitly attest
+the prior decision only if it matches. No automatic conversion or database migration.
+A prose session-state note alone cannot unlock planning. A task-start audit marker
+preserves the opt-in even if its markdown marker is subsequently removed. This gate
+authorizes planning only, not implementation; ordinary reviewed-plan approvals still
+bind their full artifacts/revisions and are not weakened by this MVP rule.
+
+Fold intersecting owner instructions into the same task and update the contract only
+when scope, non-goals, acceptance, or constraints actually change. Preserve completed
+progress, findings, and current work; continue unaffected permitted steps rather than
+restarting discovery or opening a duplicate task. Reconcile only the impacted work
+with the explicit owner decision and ordinary gates.
+
+At enqueue, a New Product Plato (`plan`) request must reference this task's authoritative
+MVP scope path and is internally pinned to the approved digest. At dispatch, stale
+or legacy unpinned queued requests fail closed even after a new approval. Socrates
+replaces them with a fresh request/idempotency key using the current approval, without
+asking the owner again. Pending-request/restore views retain obsolete rows with an
+actionable read-only `dispatch_guard` diagnostic, not another SQLite status or a deleted
+task. Unaffected requests keep their public shape; already-running Plato is outside this
+queue case and is not reset or cancelled.
 
 Only Socrates persists discovery decisions and episodic memory. Aristotle and other
 specialists use the existing delegation/outbox protocol. The existing

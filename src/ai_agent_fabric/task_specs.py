@@ -200,15 +200,24 @@ def create_task(project_root: Path, title: str, work_class: str, task_id: str | 
         )
         session_state = "# Session state\n\nStatus: PENDING\n\n## Progress\n\n- [ ] Task not started\n"
         if new_product:
+            _write_json_atomic(package / "mvp-scope.json", {
+                "schema_version": 1,
+                "scope": [],
+                "exclusions": [],
+                "acceptance_criteria": [],
+                "constraints": [],
+            })
             session_state = (
                 "# Session state\n\nMode: new-product\n\nStatus: PENDING\n\n"
                 "## Progress\n\n- [ ] Socrates chat not claimed; discovery not started\n\n"
                 "## Next open question\n\nWho is the first user, and what problem should this product solve for them?\n\n"
                 "## Discovery decisions\n\nRecord agreed facts, alternatives, assumptions, and deferred ideas here.\n\n"
                 "## MVP owner decision\n\nPending. Before normal planning, present the exact MVP scope, non-goals, "
-                "acceptance criteria, and unresolved risks from spec.md. Use socrates approve-mvp "
-                "--preview, then record the owner's explicit decision with the reviewed spec digest, "
-                "revision, chat reference, and task-local evidence artifact. Summarize it here; "
+                "acceptance criteria, and constraints from mvp-scope.json; spec.md explains the proposal and risks. "
+                "Use socrates approve-mvp --preview, then record the owner's explicit decision with "
+                "--reviewed-scope-sha256, chat reference, and task-local evidence artifact. "
+                "Reuse an existing explicit chat decision if it covers this exact contract; do not ask twice. "
+                "Editorial spec edits do not revoke MVP approval. Summarize it here; "
                 "this note alone does not unlock planning.\n"
             )
         _write(package / "session-state.md", session_state)
@@ -244,7 +253,7 @@ def require_new_product_client(project_root: Path) -> None:
 
 
 def new_product_mvp_preview(project_root: Path, task_id: str) -> dict[str, object]:
-    """Для Socrates и memory-gate прочитать точную spec-ревизию, не выдавая разрешение."""
+    """Preview the MVP contract without granting approval; spec metadata is informational."""
     if not new_product_context(project_root, task_id):
         raise ValueError("MVP approval requires the saved New Product mode and session state")
     require_new_product_client(project_root)
@@ -255,12 +264,54 @@ def new_product_mvp_preview(project_root: Path, task_id: str) -> dict[str, objec
     metadata = _load_json_object(_package_file(package, "task.json"), "task metadata")
     if metadata["id"] != task_id or metadata["work_class"] != "planned":
         raise ValueError("MVP approval requires the matching planned New Product task")
+    try:
+        scope_path = _package_file(package, "mvp-scope.json")
+    except ValueError:
+        raise ValueError(
+            "New Product requires authoritative mvp-scope.json. Populate it from the agreed MVP contract, "
+            "preview and attest it; legacy spec-only approvals cannot authorize it. Reuse the exact prior "
+            "explicit owner decision only if its scope matches; do not ask a duplicate question."
+        ) from None
+    try:
+        scope = json.loads(scope_path.read_text(encoding="utf-8"), object_pairs_hook=_unique_mvp_fields)
+    except (OSError, ValueError):
+        raise ValueError("mvp-scope.json must be valid JSON without duplicate keys") from None
+    fields = {"scope", "exclusions", "acceptance_criteria", "constraints"}
+    if (
+        not isinstance(scope, dict)
+        or set(scope) != fields | {"schema_version"}
+        or type(scope.get("schema_version")) is not int
+        or scope["schema_version"] != 1
+        or any(
+            not isinstance(scope[field], list)
+            or any(not isinstance(item, str) or not item.strip() for item in scope[field])
+            for field in fields
+        )
+        or not scope["scope"]
+        or not scope["acceptance_criteria"]
+    ):
+        raise ValueError(
+            "mvp-scope.json requires exactly schema_version 1 and string arrays scope, exclusions, "
+            "acceptance_criteria, constraints; scope and acceptance_criteria must not be empty"
+        )
+    canonical = json.dumps(scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return {
         "task_id": task_id,
+        "scope": scope,
+        "scope_sha256": hashlib.sha256(canonical).hexdigest(),
+        "scope_artifact": str((package / "mvp-scope.json").relative_to(project_root.resolve())).replace("\\", "/"),
         "spec_revision": metadata["workflow"]["spec_revision"],
         "spec_sha256": _sha256_file(_package_file(package, "spec.md")),
-        "scope_artifact": str((package / "spec.md").relative_to(project_root.resolve())).replace("\\", "/"),
     }
+
+
+def _unique_mvp_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("Duplicate MVP contract key")
+        value[key] = item
+    return value
 
 
 def workflow_steps(work_class: str) -> list[str]:

@@ -1,5 +1,6 @@
 from pathlib import Path
 from contextlib import redirect_stderr, redirect_stdout
+import hashlib
 import io
 import json
 import os
@@ -14,9 +15,9 @@ from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
 from ai_agent_fabric.entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
 from ai_agent_fabric.harness import flush_guard_traces, record_checkpoint
-from ai_agent_fabric.memory import acknowledge_result, attest_new_product_mvp_approval, claim_socrates_chat, initialize, mark_request_dispatched, record, submit_request, submit_result
+from ai_agent_fabric.memory import acknowledge_result, attest_new_product_mvp_approval, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, record, submit_request, submit_result
 from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
-from ai_agent_fabric.task_specs import create_task, implementation_readiness, new_product_mvp_preview, validate_task, workflow_steps
+from ai_agent_fabric.task_specs import approval_preview, attest_chat_approval, create_task, implementation_readiness, new_product_mvp_preview, validate_task, workflow_steps
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
@@ -57,10 +58,13 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         request = result["socrates_chat_request"]
 
         self.assertEqual(
-            {path.relative_to(package) for path in package.rglob("*")},
+            {path.relative_to(package) for path in package.rglob("*")} - {Path("mvp-scope.json")},
             {path.relative_to(ordinary_package) for path in ordinary_package.rglob("*")},
         )
         self.assertEqual(validate_task(self.project, result["task_id"]), [])
+        self.assertFalse((ordinary_package / "mvp-scope.json").exists())
+        with self.assertRaisesRegex(ValueError, "must not be empty"):
+            new_product_mvp_preview(self.project, result["task_id"])
         self.assertEqual(
             set(json.loads((package / "task.json").read_text(encoding="utf-8"))),
             set(json.loads((ordinary_package / "task.json").read_text(encoding="utf-8"))),
@@ -222,11 +226,22 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(applied["created"]["socrates_chat_request"]["mode"], "new-product")
         self.assertEqual(restore_task(project, applied["task_id"])["memory"]["session"]["status"], "awaiting-socrates-chat")
 
+    def _write_mvp_scope(self, package: Path) -> None:
+        """Для MVP-тестов заполнить только task-local контракт, отдельно от пояснений spec."""
+        (package / "mvp-scope.json").write_text(json.dumps({
+            "schema_version": 1,
+            "scope": ["One offline checklist for one user."],
+            "exclusions": ["Synchronization."],
+            "acceptance_criteria": ["A saved checklist opens offline."],
+            "constraints": [],
+        }), encoding="utf-8")
+
     def _new_product_discovery(self, task_id: str = "new-product") -> tuple[Path, dict[str, object], str]:
         """Подготовить только fixture discovery; решение в memory намеренно ещё отсутствует."""
         result = start_task(self.project, "New product", "planned", task_id, new_product=True)
         package = Path(result["package"])
         claim_socrates_chat(self.project, task_id, f"socrates-{task_id}")
+        self._write_mvp_scope(package)
         (package / "spec.md").write_text(
             "# MVP\n\n## Scope\n\nOne offline checklist for one user.\n\n"
             "## Non-Goals\n\nNo synchronization.\n\n## Acceptance Criteria\n\nA saved checklist opens offline.\n",
@@ -238,9 +253,14 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             self.project, task_id, "intake", "done",
             str(intake.relative_to(self.project)).replace("\\", "/"), "intake-complete",
         )
+        preview = new_product_mvp_preview(self.project, task_id)
         decision = package / "evidence/mvp-owner-decision.md"
-        decision.write_text("# Owner decision\n\nOwner approves the exact MVP scope and acceptance criteria; source owner-chat-1.\n", encoding="utf-8")
-        return package, new_product_mvp_preview(self.project, task_id), str(decision.relative_to(self.project)).replace("\\", "/")
+        decision.write_text(
+            "# Owner decision\n\nOwner explicitly approves this contract; source owner-chat-1.\n\n"
+            + json.dumps(preview["scope"], indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return package, preview, str(decision.relative_to(self.project)).replace("\\", "/")
 
     def test_new_product_mvp_gate_rejects_prose_closure_skip_and_planning_request(self) -> None:
         package, preview, decision = self._new_product_discovery()
@@ -291,7 +311,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual((self.project / ".agent-fabric/memory.db").read_bytes(), before)
 
         approved = attest_new_product_mvp_approval(
-            self.project, "new-product", preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision,
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
             thread_id="socrates-new-product",
         )
         restored = restore_task(self.project, "new-product")
@@ -299,6 +319,8 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(approval_records[0]["evidence"], approved)
         self.assertEqual(approved["spec_sha256"], preview["spec_sha256"])
         self.assertEqual(approved["spec_revision"], preview["spec_revision"])
+        self.assertEqual(approved["scope_sha256"], preview["scope_sha256"])
+        self.assertEqual(approved["scope"], preview["scope"])
         self.assertEqual(approved["task_id"], "new-product")
         self.assertEqual(approved["approval_method"], "agent-attested-chat")
         self.assertEqual(restored["memory"]["lifecycle"]["next_action"], "discovery")
@@ -308,13 +330,13 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertFalse(implementation_readiness(self.project, "new-product")["ready"])
         self.assertFalse(json.loads((package / "approval.json").read_text(encoding="utf-8"))["approved"])
 
-    def test_new_product_mvp_gate_rechecks_spec_revision_content_and_decision_evidence(self) -> None:
-        for change in ("content", "revision", "decision"):
+    def test_new_product_mvp_gate_rechecks_contract_and_exact_decision_evidence(self) -> None:
+        for change in ("scope", "exclusions", "acceptance_criteria", "constraints", "decision"):
             with self.subTest(change=change):
-                task_id = f"product-{change}"
+                task_id = "product-" + change.replace("_", "-")
                 package, preview, decision = self._new_product_discovery(task_id)
                 attest_new_product_mvp_approval(
-                    self.project, task_id, preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision,
+                    self.project, task_id, preview["scope_sha256"], "owner-chat-1", decision,
                     thread_id=f"socrates-{task_id}",
                 )
                 request = {
@@ -327,40 +349,299 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
                     "required_outputs": ["plan.md"],
                 }
                 submit_request(self.project, request)
-                if change == "content":
-                    spec = package / "spec.md"
-                    spec.write_text(spec.read_text(encoding="utf-8") + "\nAdded a second user workflow.\n", encoding="utf-8")
-                elif change == "revision":
-                    metadata_path = package / "task.json"
-                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-                    metadata["workflow"]["spec_revision"] += 1
-                    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-                else:
+                if change == "decision":
                     (self.project / decision).write_text("# Changed decision evidence\n", encoding="utf-8")
+                else:
+                    scope_path = package / "mvp-scope.json"
+                    scope = json.loads(scope_path.read_text(encoding="utf-8"))
+                    scope[change].append("Changed owner contract.")
+                    scope_path.write_text(json.dumps(scope), encoding="utf-8")
+                before = (self.project / ".agent-fabric/memory.db").read_bytes()
                 with self.assertRaisesRegex(PermissionError, "current MVP owner approval"):
                     transition_step(self.project, task_id, "discovery", "done", decision, "mvp-approved")
-                with self.assertRaisesRegex(PermissionError, "current MVP owner approval"):
+                with self.assertRaises(PermissionError):
                     mark_request_dispatched(self.project, request["idempotency_key"])
                 with self.assertRaisesRegex(PermissionError, "current MVP owner approval"):
                     submit_request(self.project, {**request, "idempotency_key": f"{task_id}-new-plan"})
+                diagnostic = pending_requests(self.project, task_id)[0]["dispatch_guard"]
+                self.assertEqual(diagnostic["state"], "blocked" if change == "decision" else "obsolete")
+                self.assertEqual((self.project / ".agent-fabric/memory.db").read_bytes(), before)
                 fresh = new_product_mvp_preview(self.project, task_id)
+                new_decision = package / "evidence/mvp-owner-decision-2.md"
+                new_decision.write_text(
+                    "# Explicit owner-chat-2 decision\n\n" + json.dumps(fresh["scope"], indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                decision_reference = str(new_decision.relative_to(self.project)).replace("\\", "/")
                 attest_new_product_mvp_approval(
-                    self.project, task_id, fresh["spec_sha256"], fresh["spec_revision"], "owner-chat-2", decision,
+                    self.project, task_id, fresh["scope_sha256"], "owner-chat-2", decision_reference,
                     thread_id=f"socrates-{task_id}",
                 )
-                self.assertEqual(transition_step(self.project, task_id, "discovery", "done", decision, "mvp-reapproved")["next_action"], "plan")
-                self.assertTrue(mark_request_dispatched(self.project, request["idempotency_key"]))
+                self.assertEqual(transition_step(self.project, task_id, "discovery", "done", decision_reference, "mvp-reapproved")["next_action"], "plan")
+                if change == "decision":
+                    self.assertTrue(mark_request_dispatched(self.project, request["idempotency_key"]))
+                else:
+                    with self.assertRaisesRegex(PermissionError, "obsolete"):
+                        mark_request_dispatched(self.project, request["idempotency_key"])
+                    self.assertFalse(submit_request(self.project, request))
+                    replacement = {**request, "idempotency_key": f"{task_id}-replacement-plan"}
+                    self.assertTrue(submit_request(self.project, replacement))
+                    self.assertTrue(mark_request_dispatched(self.project, replacement["idempotency_key"]))
+                    self.assertEqual(pending_requests(self.project, task_id)[0]["dispatch_guard"], diagnostic)
                 approvals = [item for item in restore_task(self.project, task_id)["memory"]["records"] if item["kind"] == "new-product-mvp-approved"]
                 self.assertEqual(len(approvals), 2)
+
+    def test_new_product_editorial_spec_and_revision_edits_preserve_semantic_approval(self) -> None:
+        package, preview, decision = self._new_product_discovery()
+        attest_new_product_mvp_approval(
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
+        )
+        request = {
+            "idempotency_key": "editorial-plan", "session_id": "new-product", "task_id": "new-product",
+            "agent": "plan", "scope_artifact": preview["scope_artifact"],
+            "input_artifacts": [preview["scope_artifact"]], "required_outputs": ["plan.md"],
+        }
+        self.assertTrue(submit_request(self.project, request))
+        spec = package / "spec.md"
+        spec.write_text(spec.read_text(encoding="utf-8") + "\n## Rationale\n\nEditorial clarification.\n", encoding="utf-8")
+        metadata_path = package / "task.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["workflow"]["spec_revision"] += 1
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        scope_path = package / "mvp-scope.json"
+        scope_path.write_text(
+            json.dumps(dict(reversed(list(preview["scope"].items()))), indent=4) + "\n",
+            encoding="utf-8",
+        )
+        before = (self.project / ".agent-fabric/memory.db").read_bytes()
+        fresh = new_product_mvp_preview(self.project, "new-product")
+        self.assertEqual(fresh["scope"], preview["scope"])
+        self.assertEqual(fresh["scope_sha256"], preview["scope_sha256"])
+        self.assertNotEqual(fresh["spec_sha256"], preview["spec_sha256"])
+        self.assertEqual(fresh["spec_revision"], preview["spec_revision"] + 1)
+        pending = pending_requests(self.project, "new-product")[0]
+        self.assertEqual(pending["payload"], request)
+        self.assertNotIn("dispatch_guard", pending)
+        self.assertEqual((self.project / ".agent-fabric/memory.db").read_bytes(), before)
+        self.assertTrue(mark_request_dispatched(self.project, request["idempotency_key"]))
+        self.assertEqual(transition_step(
+            self.project, "new-product", "discovery", "done", decision, "mvp-approved",
+        )["next_action"], "plan")
+        self.assertFalse(implementation_readiness(self.project, "new-product")["ready"])
+        with self.assertRaisesRegex(ValueError, "workflow order"):
+            transition_step(self.project, "new-product", "implementation", "in-progress")
+        approvals = [item for item in restore_task(self.project, "new-product")["memory"]["records"] if item["kind"] == "new-product-mvp-approved"]
+        self.assertEqual(len(approvals), 1)
+
+    def test_new_product_semantic_approval_does_not_weaken_full_implementation_binding(self) -> None:
+        package, preview, decision = self._new_product_discovery()
+        attest_new_product_mvp_approval(
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
+        )
+        kepler_path = package / "kepler.json"
+        kepler = json.loads(kepler_path.read_text(encoding="utf-8"))
+        kepler["verdict"] = "advice"
+        kepler["artifact_digests"] = {
+            name: hashlib.sha256((package / name).read_bytes()).hexdigest()
+            for name in ("spec.md", "research.md", "plan.md")
+        }
+        kepler_path.write_text(json.dumps(kepler), encoding="utf-8")
+        self.assertFalse(implementation_readiness(self.project, "new-product")["ready"])
+        reviewed = approval_preview(self.project, "new-product")["kepler_verdict_sha256"]
+        attest_chat_approval(self.project, "new-product", reviewed, "reviewed-package-owner-chat")
+        self.assertTrue(implementation_readiness(self.project, "new-product")["ready"])
+        spec = package / "spec.md"
+        spec.write_text(spec.read_text(encoding="utf-8") + "\nEditorial explanation.\n", encoding="utf-8")
+        metadata_path = package / "task.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["workflow"]["spec_revision"] += 1
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+        self.assertEqual(new_product_mvp_preview(self.project, "new-product")["scope_sha256"], preview["scope_sha256"])
+        self.assertEqual(transition_step(
+            self.project, "new-product", "discovery", "done", decision, "mvp-still-approved",
+        )["next_action"], "plan")
+        readiness = implementation_readiness(self.project, "new-product")
+        self.assertFalse(readiness["ready"])
+        self.assertIn("Approval must apply to the current spec revision", readiness["reasons"])
+        self.assertIn("Kepler verdict does not match the current spec, research, and plan content", readiness["reasons"])
+
+    def test_new_product_scope_validation_rejects_ambiguous_or_incomplete_contract_read_only(self) -> None:
+        package, preview, _ = self._new_product_discovery()
+        scope_path = package / "mvp-scope.json"
+        invalid = [
+            "[]", "{",
+            json.dumps({**preview["scope"], "schema_version": True}),
+            json.dumps({**preview["scope"], "notes": "Not part of the contract"}),
+            json.dumps({key: value for key, value in preview["scope"].items() if key != "exclusions"}),
+            json.dumps({**preview["scope"], "scope": []}),
+            json.dumps({**preview["scope"], "acceptance_criteria": [" "]}),
+            json.dumps({**preview["scope"], "constraints": "Offline"}),
+            json.dumps({**preview["scope"], "exclusions": [1]}),
+            json.dumps(preview["scope"])[:-1] + ", \"scope\": [\"Ambiguous replacement\"]}",
+        ]
+        for content in invalid:
+            with self.subTest(content=content):
+                scope_path.write_text(content, encoding="utf-8")
+                before = {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
+                with self.assertRaisesRegex(ValueError, "mvp-scope.json"):
+                    new_product_mvp_preview(self.project, "new-product")
+                self.assertEqual(
+                    {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()},
+                    before,
+                )
+
+    def test_new_product_legacy_approval_and_unpinned_queue_fail_closed_without_migration(self) -> None:
+        package, preview, decision = self._new_product_discovery()
+        approved = attest_new_product_mvp_approval(
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
+        )
+        legacy = {key: value for key, value in approved.items() if key not in {"scope", "scope_sha256"}}
+        legacy["scope_artifact"] = str((package / "spec.md").relative_to(self.project)).replace("\\", "/")
+        request = {
+            "idempotency_key": "legacy-plan", "session_id": "new-product", "task_id": "new-product",
+            "agent": "plan", "scope_artifact": preview["scope_artifact"],
+            "input_artifacts": [preview["scope_artifact"]], "required_outputs": ["plan.md"],
+        }
+        # Исторические строки создаются только в изолированной fixture: прежний request
+        # мог иметь даже правильный путь, но не имел внутреннего semantic pin.
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            schema = connection.execute("SELECT name, sql FROM sqlite_master ORDER BY name").fetchall()
+            connection.execute(
+                "UPDATE records SET evidence_json=? WHERE kind='new-product-mvp-approved'",
+                (json.dumps(legacy),),
+            )
+            connection.execute(
+                "INSERT INTO delegation_requests(idempotency_key, session_id, agent, payload_json) VALUES (?, ?, ?, ?)",
+                ("legacy-plan", "new-product", "plan", json.dumps(request)),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        (package / "mvp-scope.json").unlink()
+        with self.assertRaisesRegex(ValueError, "legacy spec-only approvals cannot authorize"):
+            new_product_mvp_preview(self.project, "new-product")
+        self.assertEqual(pending_requests(self.project, "new-product")[0]["dispatch_guard"]["reason"], "mvp-scope-unavailable")
+        self._write_mvp_scope(package)
+        before = (self.project / ".agent-fabric/memory.db").read_bytes()
+        with self.assertRaisesRegex(PermissionError, "Legacy spec-only approval is insufficient"):
+            transition_step(self.project, "new-product", "discovery", "done", decision, "legacy-approval")
+        with self.assertRaisesRegex(PermissionError, "obsolete"):
+            mark_request_dispatched(self.project, "legacy-plan")
+        self.assertEqual(pending_requests(self.project, "new-product")[0]["dispatch_guard"], {
+            "state": "obsolete", "reason": "mvp-scope-pin-mismatch", "recommended_action": "replace-plan-request",
+        })
+        self.assertEqual((self.project / ".agent-fabric/memory.db").read_bytes(), before)
+        # Повторно фиксируется тот же явный owner-chat-1, без нового вопроса/решения.
+        attest_new_product_mvp_approval(
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
+        )
+        with self.assertRaisesRegex(PermissionError, "obsolete"):
+            mark_request_dispatched(self.project, "legacy-plan")
+        replacement = {**request, "idempotency_key": "replacement-plan"}
+        self.assertTrue(submit_request(self.project, replacement))
+        self.assertTrue(mark_request_dispatched(self.project, "replacement-plan"))
+        connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+        try:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
+            self.assertEqual(connection.execute("SELECT name, sql FROM sqlite_master ORDER BY name").fetchall(), schema)
+        finally:
+            connection.close()
+
+    def test_new_product_plan_scope_enforcement_preserves_progress_running_and_unrelated_work(self) -> None:
+        package, preview, decision = self._new_product_discovery()
+        attest_new_product_mvp_approval(
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
+        )
+        request = {
+            "idempotency_key": "running-plan", "session_id": "new-product", "task_id": "new-product",
+            "agent": "plan", "scope_artifact": preview["scope_artifact"],
+            "input_artifacts": [preview["scope_artifact"]], "required_outputs": ["plan.md"],
+        }
+        for invalid in (
+            {**request, "scope_artifact": str((package / "spec.md").relative_to(self.project)).replace("\\", "/")},
+            {**request, "task_id": "other-task"},
+            {**request, "_new_product_mvp_scope_sha256": preview["scope_sha256"]},
+        ):
+            with self.assertRaises(ValueError):
+                submit_request(self.project, invalid)
+        transition_step(self.project, "new-product", "discovery", "done", decision, "mvp-approved")
+        progress = restore_task(self.project, "new-product")["memory"]["steps"]
+        self.assertTrue(submit_request(self.project, request))
+        self.assertTrue(mark_request_dispatched(self.project, request["idempotency_key"]))
+        self.assertTrue(submit_request(self.project, {**request, "idempotency_key": "queued-plan"}))
+        unrelated = {**request, "agent": "explore", "idempotency_key": "unrelated-research"}
+        self.assertTrue(submit_request(self.project, unrelated))
+        changed = {**preview["scope"], "scope": ["Owner explicitly requests two offline checklists."]}
+        (package / "mvp-scope.json").write_text(json.dumps(changed), encoding="utf-8")
+        new_decision = package / "evidence/mvp-owner-decision-2.md"
+        new_decision.write_text(
+            "# Explicit owner-chat-2 decision\n\n" + json.dumps(changed, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(mark_request_dispatched(self.project, unrelated["idempotency_key"]))
+        self.assertFalse(mark_request_dispatched(self.project, request["idempotency_key"]))
+        attest_new_product_mvp_approval(
+            self.project, "new-product", new_product_mvp_preview(self.project, "new-product")["scope_sha256"],
+            "owner-chat-2", str(new_decision.relative_to(self.project)).replace("\\", "/"),
+            thread_id="socrates-new-product",
+        )
+        with self.assertRaisesRegex(PermissionError, "obsolete"):
+            mark_request_dispatched(self.project, "queued-plan")
+        restored = restore_task(self.project, "new-product")
+        self.assertEqual(restored["memory"]["steps"], progress)
+        self.assertEqual(restored["memory"]["lifecycle"]["next_action"], "plan")
+        research = next(item for item in restored["pending_requests"] if item["agent"] == "explore")
+        self.assertEqual(research["payload"], unrelated)
+        self.assertNotIn("dispatch_guard", research)
+        running = next(item for item in restored["pending_requests"] if item["idempotency_key"] == "running-plan")
+        self.assertNotIn("dispatch_guard", running)
+        self.assertTrue(submit_result(self.project, {
+            "idempotency_key": "running-plan-result", "request_id": "running-plan", "session_id": "new-product",
+            "agent": "plan", "summary": "Existing dispatched work retained for reconciliation.",
+            "artifacts": [], "findings": [], "decisions": [],
+        }))
+
+    def test_new_product_mvp_gate_preserves_owner_tags_and_decision_binding(self) -> None:
+        _, preview, decision = self._new_product_discovery()
+        approved = attest_new_product_mvp_approval(
+            self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
+        )
+        for field, value in (
+            ("approved", 1), ("approved_by", "agent"), ("approval_method", "interactive-terminal"),
+            ("chat_reference", " "), ("task_id", "other-task"), ("scope_sha256", "0" * 64),
+            ("scope_artifact", "spec.md"), ("decision_artifact_sha256", "0" * 64),
+        ):
+            with self.subTest(field=field):
+                connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
+                try:
+                    connection.execute(
+                        "UPDATE records SET evidence_json=? WHERE kind='new-product-mvp-approved'",
+                        (json.dumps({**approved, field: value}),),
+                    )
+                    connection.commit()
+                finally:
+                    connection.close()
+                before = (self.project / ".agent-fabric/memory.db").read_bytes()
+                with self.assertRaisesRegex(PermissionError, "current MVP owner approval"):
+                    transition_step(self.project, "new-product", "discovery", "done", decision, "invalid-approval")
+                self.assertEqual((self.project / ".agent-fabric/memory.db").read_bytes(), before)
 
     def test_new_product_mvp_attestation_requires_claim_current_preview_and_local_evidence(self) -> None:
         result = start_task(self.project, "New product", "planned", new_product=True)
         package = Path(result["package"])
+        self._write_mvp_scope(package)
         preview = new_product_mvp_preview(self.project, "new-product")
         decision_path = package / "evidence/mvp.md"
         decision_path.write_text("# Explicit owner decision\n", encoding="utf-8")
         decision = str(decision_path.relative_to(self.project)).replace("\\", "/")
-        arguments = (self.project, "new-product", preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision)
+        arguments = (self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision)
         with self.assertRaisesRegex(PermissionError, "claimed separate Socrates chat"):
             attest_new_product_mvp_approval(*arguments, thread_id="socrates-new-product")
         with self.assertRaisesRegex(ValueError, "only the orchestrator"):
@@ -368,23 +649,25 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         claim_socrates_chat(self.project, "new-product", "socrates-new-product")
         with self.assertRaisesRegex(ValueError, "changed after preview"):
             attest_new_product_mvp_approval(
-                self.project, "new-product", preview["spec_sha256"], preview["spec_revision"] + 1, "owner-chat-1", decision,
+                self.project, "new-product", preview["spec_sha256"], "owner-chat-1", decision,
                 thread_id="socrates-new-product",
             )
-        spec = package / "spec.md"
-        spec.write_text(spec.read_text(encoding="utf-8") + "\nChanged scope.\n", encoding="utf-8")
+        scope_path = package / "mvp-scope.json"
+        scope = json.loads(scope_path.read_text(encoding="utf-8"))
+        scope["scope"].append("Changed scope.")
+        scope_path.write_text(json.dumps(scope), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "changed after preview"):
             attest_new_product_mvp_approval(*arguments, thread_id="socrates-new-product")
         fresh = new_product_mvp_preview(self.project, "new-product")
         (self.project / "foreign.md").write_text("# Not task-local evidence\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "inside this task"):
             attest_new_product_mvp_approval(
-                self.project, "new-product", fresh["spec_sha256"], fresh["spec_revision"], "owner-chat-1", "foreign.md",
+                self.project, "new-product", fresh["scope_sha256"], "owner-chat-1", "foreign.md",
                 thread_id="socrates-new-product",
             )
         with self.assertRaises((OSError, ValueError)):
             attest_new_product_mvp_approval(
-                self.project, "new-product", fresh["spec_sha256"], fresh["spec_revision"], "owner-chat-1",
+                self.project, "new-product", fresh["scope_sha256"], "owner-chat-1",
                 "docs/specs/active/new-product/evidence/missing.md",
                 thread_id="socrates-new-product",
             )
@@ -396,7 +679,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         _, preview, decision = self._new_product_discovery()
         other = start_task(self.project, "Other task", "small-bug")
         claim_socrates_chat(self.project, other["task_id"], "socrates-other-task")
-        arguments = (self.project, "new-product", preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision)
+        arguments = (self.project, "new-product", preview["scope_sha256"], "owner-chat-1", decision)
         before = {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
 
         with self.assertRaisesRegex(TypeError, "thread_id"):
@@ -449,8 +732,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             before,
         )
         write_arguments = arguments + [
-            "--reviewed-spec-sha256", preview["spec_sha256"],
-            "--reviewed-spec-revision", str(preview["spec_revision"]),
+            "--reviewed-scope-sha256", preview["scope_sha256"],
             "--chat-reference", "owner-chat-1", "--artifact", decision,
         ]
         errors = io.StringIO()
@@ -507,6 +789,18 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
                         str(evidence.relative_to(project)).replace("\\", "/"), f"{step}-complete",
                     )
                 self.assertEqual(result["next_action"], "plan")
+                request = {
+                    "idempotency_key": f"ordinary-{client}-plan", "session_id": ordinary["task_id"],
+                    "task_id": ordinary["task_id"], "agent": "plan",
+                    "scope_artifact": str((package / "spec.md").relative_to(project)).replace("\\", "/"),
+                    "input_artifacts": [], "required_outputs": ["plan.md"],
+                }
+                self.assertTrue(submit_request(project, request))
+                pending = pending_requests(project, ordinary["task_id"])[0]
+                self.assertEqual(set(pending), {"idempotency_key", "agent", "status", "payload", "created_at"})
+                self.assertEqual(pending["payload"], request)
+                self.assertTrue(mark_request_dispatched(project, request["idempotency_key"]))
+                self.assertFalse(implementation_readiness(project, ordinary["task_id"])["ready"])
 
     def test_start_requires_a_separate_socrates_chat_claim(self) -> None:
         result = start_task(self.project, "Example task", "small-bug", "example-task")
