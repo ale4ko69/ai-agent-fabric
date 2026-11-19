@@ -630,25 +630,29 @@ def _require_new_product_mvp_approval(connection: sqlite3.Connection, project_ro
 
 def attest_new_product_mvp_approval(
     project_root: Path, session_id: str, reviewed_spec_sha256: str, reviewed_spec_revision: int,
-    chat_reference: str, decision_artifact: str, actor: str = "orchestrator",
+    chat_reference: str, decision_artifact: str, actor: str = "orchestrator", *, thread_id: str,
 ) -> dict[str, Any]:
-    """Из claimed Socrates записать agent-attested решение владельца для точной spec.
+    """Record an owner decision attested by the task's claimed Socrates chat.
 
-    Digest и ревизия приходят из preview, chat_reference и evidence — из явного решения.
-    Сначала проверяются claim, scope и evidence; только затем existing records получает
-    разрешение. Это не аутентификация владельца и не разрешение на implementation.
+    The caller-supplied thread ID must match the stored claim. This check is not
+    independent authentication of the Desktop chat or owner, and it does not
+    authorize implementation.
     """
     if actor != "orchestrator" or not _safe_identifier(session_id):
         raise ValueError("only the orchestrator may attest MVP owner approval")
+    if not _safe_identifier(thread_id):
+        raise ValueError("Socrates chat thread id must be safe")
     if not isinstance(chat_reference, str) or not chat_reference.strip() or len(chat_reference) > 256 or any(c in chat_reference for c in "\r\n"):
         raise ValueError("A short source chat reference is required")
     connection = connect(project_root, create=False)
     try:
         _require_current_schema_connection(connection)
         with connection:
-            chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
+            chat = connection.execute("SELECT thread_id, status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
             if chat is None or chat["status"] != "claimed":
                 raise PermissionError("MVP owner approval requires a claimed separate Socrates chat")
+            if chat["thread_id"] != thread_id:
+                raise PermissionError("MVP owner approval thread id does not match the claimed Socrates chat")
             scope = _new_product_mvp_scope(connection, project_root, session_id)
             if scope is None:
                 raise ValueError("MVP approval requires an existing New Product task lifecycle")

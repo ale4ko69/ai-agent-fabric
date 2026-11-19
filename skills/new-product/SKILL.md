@@ -131,15 +131,17 @@ scope binding:
 Present that spec revision and full `spec.md` to the owner. After an explicit approval,
 write a concise task-local decision artifact under this package's `evidence/`, naming
 the accepted scope/acceptance criteria and decision source, not a raw conversation.
-Then, only in the claimed Socrates chat, record the agent-attested decision:
+Then, only in the claimed Socrates chat, record the agent-attested decision. Use
+the current chat's actual thread ID from the client. If the client does not expose
+it, stop without recording approval; do not copy the stored claim as a fallback.
 
 ```text
-<fabric-launcher> socrates approve-mvp <project-root> --session <task-id> --reviewed-spec-sha256 <preview-digest> --reviewed-spec-revision <preview-revision> --chat-reference <decision-source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
+<fabric-launcher> socrates approve-mvp <project-root> --session <task-id> --thread-id <current-thread-id> --reviewed-spec-sha256 <preview-digest> --reviewed-spec-revision <preview-revision> --chat-reference <decision-source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
 ```
 
 This uses existing task memory records, not another database or approval file format.
-Like the existing chat-approval method, it trusts Socrates' assertion of an explicit
-owner decision; it is not independently authenticated identity. Summarize the result
+Fabric checks the supplied ID against the stored Socrates claim; it does not
+independently authenticate the current chat or the owner's decision. Summarize the result
 under `## MVP owner decision` in `session-state.md`, but a prose note alone does not
 unlock planning. Discovery cannot be closed or skipped, and planning cannot be
 advanced or delegated, without a current approval record. Any change to `spec.md`,

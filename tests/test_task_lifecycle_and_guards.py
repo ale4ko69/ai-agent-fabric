@@ -1,5 +1,5 @@
 from pathlib import Path
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import os
@@ -292,6 +292,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
 
         approved = attest_new_product_mvp_approval(
             self.project, "new-product", preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision,
+            thread_id="socrates-new-product",
         )
         restored = restore_task(self.project, "new-product")
         approval_records = [item for item in restored["memory"]["records"] if item["kind"] == "new-product-mvp-approved"]
@@ -314,6 +315,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
                 package, preview, decision = self._new_product_discovery(task_id)
                 attest_new_product_mvp_approval(
                     self.project, task_id, preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision,
+                    thread_id=f"socrates-{task_id}",
                 )
                 request = {
                     "idempotency_key": f"{task_id}-plan",
@@ -344,6 +346,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
                 fresh = new_product_mvp_preview(self.project, task_id)
                 attest_new_product_mvp_approval(
                     self.project, task_id, fresh["spec_sha256"], fresh["spec_revision"], "owner-chat-2", decision,
+                    thread_id=f"socrates-{task_id}",
                 )
                 self.assertEqual(transition_step(self.project, task_id, "discovery", "done", decision, "mvp-reapproved")["next_action"], "plan")
                 self.assertTrue(mark_request_dispatched(self.project, request["idempotency_key"]))
@@ -359,32 +362,69 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         decision = str(decision_path.relative_to(self.project)).replace("\\", "/")
         arguments = (self.project, "new-product", preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision)
         with self.assertRaisesRegex(PermissionError, "claimed separate Socrates chat"):
-            attest_new_product_mvp_approval(*arguments)
+            attest_new_product_mvp_approval(*arguments, thread_id="socrates-new-product")
         with self.assertRaisesRegex(ValueError, "only the orchestrator"):
-            attest_new_product_mvp_approval(*arguments, actor="explore")
+            attest_new_product_mvp_approval(*arguments, actor="explore", thread_id="socrates-new-product")
         claim_socrates_chat(self.project, "new-product", "socrates-new-product")
         with self.assertRaisesRegex(ValueError, "changed after preview"):
             attest_new_product_mvp_approval(
                 self.project, "new-product", preview["spec_sha256"], preview["spec_revision"] + 1, "owner-chat-1", decision,
+                thread_id="socrates-new-product",
             )
         spec = package / "spec.md"
         spec.write_text(spec.read_text(encoding="utf-8") + "\nChanged scope.\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "changed after preview"):
-            attest_new_product_mvp_approval(*arguments)
+            attest_new_product_mvp_approval(*arguments, thread_id="socrates-new-product")
         fresh = new_product_mvp_preview(self.project, "new-product")
         (self.project / "foreign.md").write_text("# Not task-local evidence\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "inside this task"):
             attest_new_product_mvp_approval(
                 self.project, "new-product", fresh["spec_sha256"], fresh["spec_revision"], "owner-chat-1", "foreign.md",
+                thread_id="socrates-new-product",
             )
         with self.assertRaises((OSError, ValueError)):
             attest_new_product_mvp_approval(
                 self.project, "new-product", fresh["spec_sha256"], fresh["spec_revision"], "owner-chat-1",
                 "docs/specs/active/new-product/evidence/missing.md",
+                thread_id="socrates-new-product",
             )
         with self.assertRaisesRegex(ValueError, "claimed Socrates attestation"):
             record(self.project, "new-product", "new-product-mvp-approved", "orchestrator", "prose-approval", {})
         self.assertFalse(any(item["kind"] == "new-product-mvp-approved" for item in restore_task(self.project, "new-product")["memory"]["records"]))
+
+    def test_new_product_mvp_attestation_rejects_absent_invalid_and_mismatched_thread_without_writes(self) -> None:
+        _, preview, decision = self._new_product_discovery()
+        other = start_task(self.project, "Other task", "small-bug")
+        claim_socrates_chat(self.project, other["task_id"], "socrates-other-task")
+        arguments = (self.project, "new-product", preview["spec_sha256"], preview["spec_revision"], "owner-chat-1", decision)
+        before = {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
+
+        with self.assertRaisesRegex(TypeError, "thread_id"):
+            attest_new_product_mvp_approval(*arguments)
+        self.assertEqual(
+            {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()},
+            before,
+        )
+        for thread_id, error, message in (
+            (None, ValueError, "thread id must be safe"),
+            ("", ValueError, "thread id must be safe"),
+            ("unsafe thread", ValueError, "thread id must be safe"),
+            ("another-thread", PermissionError, "does not match the claimed Socrates chat"),
+            ("socrates-other-task", PermissionError, "does not match the claimed Socrates chat"),
+            ("owner-chat-1", PermissionError, "does not match the claimed Socrates chat"),
+        ):
+            with self.subTest(thread_id=thread_id):
+                with self.assertRaisesRegex(error, message):
+                    attest_new_product_mvp_approval(*arguments, thread_id=thread_id)
+                self.assertEqual(
+                    {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()},
+                    before,
+                )
+
+        approved = attest_new_product_mvp_approval(*arguments, thread_id="socrates-new-product")
+        approvals = [item for item in restore_task(self.project, "new-product")["memory"]["records"] if item["kind"] == "new-product-mvp-approved"]
+        self.assertEqual([item["evidence"] for item in approvals], [approved])
+        self.assertEqual(approved["chat_reference"], "owner-chat-1")
 
     def test_new_product_task_start_audit_prevents_removing_mode_to_bypass_mvp_gate(self) -> None:
         package, preview, decision = self._new_product_discovery()
@@ -399,18 +439,39 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             "ai-agent-fabric", "socrates", "approve-mvp", str(self.project),
             "--session", "new-product", "--home", str(self.home), "--json",
         ]
-        before = (self.project / ".agent-fabric/memory.db").read_bytes()
+        before = {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
         output = io.StringIO()
         with mock.patch.object(sys, "argv", arguments + ["--preview"]), redirect_stdout(output):
             main()
         self.assertEqual(json.loads(output.getvalue()), preview)
-        self.assertEqual((self.project / ".agent-fabric/memory.db").read_bytes(), before)
-        output = io.StringIO()
-        with mock.patch.object(sys, "argv", arguments + [
+        self.assertEqual(
+            {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()},
+            before,
+        )
+        write_arguments = arguments + [
             "--reviewed-spec-sha256", preview["spec_sha256"],
             "--reviewed-spec-revision", str(preview["spec_revision"]),
             "--chat-reference", "owner-chat-1", "--artifact", decision,
-        ]), redirect_stdout(output):
+        ]
+        errors = io.StringIO()
+        with mock.patch.object(sys, "argv", write_arguments), redirect_stdout(io.StringIO()), redirect_stderr(errors):
+            with self.assertRaises(SystemExit) as rejected:
+                main()
+        self.assertEqual(rejected.exception.code, 2)
+        self.assertIn("--thread-id", errors.getvalue())
+        self.assertEqual(
+            {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()},
+            before,
+        )
+        with mock.patch.object(sys, "argv", write_arguments + ["--thread-id", "another-thread"]), redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(PermissionError, "does not match the claimed Socrates chat"):
+                main()
+        self.assertEqual(
+            {path.relative_to(self.project): path.read_bytes() for path in self.project.rglob("*") if path.is_file()},
+            before,
+        )
+        output = io.StringIO()
+        with mock.patch.object(sys, "argv", write_arguments + ["--thread-id", "socrates-new-product"]), redirect_stdout(output):
             main()
         self.assertTrue(json.loads(output.getvalue())["approved"])
         self.assertEqual(restore_task(self.project, "new-product")["memory"]["lifecycle"]["next_action"], "discovery")

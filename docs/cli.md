@@ -79,8 +79,14 @@ After presenting that spec to the owner and receiving explicit approval, Socrate
 writes concise decision evidence inside this task's `evidence/` directory, then records:
 
 ```text
-ai-agent-fabric socrates approve-mvp <project> --session <id> --reviewed-spec-sha256 <digest> --reviewed-spec-revision <revision> --chat-reference <source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
+ai-agent-fabric socrates approve-mvp <project> --session <id> --thread-id <claimed-thread-id> --reviewed-spec-sha256 <digest> --reviewed-spec-revision <revision> --chat-reference <source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
 ```
+
+Approval writes require an explicit `--thread-id` exactly matching this task's stored
+Socrates claim; read-only `--preview` does not. The id is not inferred from memory or
+`--chat-reference`, which identifies the owner decision's source, not the calling chat.
+This compares a caller-supplied id with the stored claim; it does not independently
+authenticate the current Codex Desktop chat.
 
 The existing memory `records` table stores this agent-attested approval, bound to the
 task id, full spec digest/revision, and decision-artifact digest. It does not authenticate
@@ -95,7 +101,7 @@ MVP approval never replaces the ordinary Kepler/reviewed-plan implementation app
 | Command | Prerequisites and state change | Typical next step |
 | --- | --- | --- |
 | `socrates claim <project> --session <id> --thread-id <id>` | Prepared task; records its separate chat claim. | Read the durable continuation. |
-| `socrates approve-mvp <project> --session <id> --preview` | New Product on Codex; reads exact MVP spec digest/revision. Without `--preview`, requires a claimed Socrates chat, matching reviewed values, decision source and task-local evidence; appends an approval record. | Close discovery through the ordinary step command; normal implementation gates still apply. |
+| `socrates approve-mvp <project> --session <id> --preview` | New Product on Codex; reads exact MVP spec digest/revision. Without `--preview`, requires explicit `--thread-id` matching this task's claimed Socrates chat, matching reviewed values, decision source and task-local evidence; appends an approval record. | Close discovery through the ordinary step command; normal implementation gates still apply. |
 | `socrates step <project> --session <id> --step <step> --status <status>` | Claimed chat; advances a checklist step. Closing requires existing evidence and a reason. | Follow the returned continuation. |
 | `socrates diagnose <project> --session <id>` | Bound project and existing session; reads state and Guard outcomes only. | Follow the reported next action. |
 | `socrates resolve-guard <project> ...` | Claimed task and existing blocked or escalated Guard; records owner direction and evidence. | Resume the preserved step. |

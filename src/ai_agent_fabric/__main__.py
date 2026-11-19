@@ -123,6 +123,7 @@ def main() -> None:
     socrates_mvp.add_argument("target", type=Path)
     socrates_mvp.add_argument("--session", required=True)
     socrates_mvp.add_argument("--preview", action="store_true", help="Read the exact spec revision and digest without recording approval")
+    socrates_mvp.add_argument("--thread-id", help="Required for approval writes; must match this task's claimed Socrates thread id")
     socrates_mvp.add_argument("--reviewed-spec-sha256")
     socrates_mvp.add_argument("--reviewed-spec-revision", type=int)
     socrates_mvp.add_argument("--chat-reference", help="Source of the explicit owner decision; agent-attested, not authenticated identity")
@@ -419,13 +420,11 @@ def main() -> None:
         if args.preview:
             result = new_product_mvp_preview(args.target, args.session)
         else:
-            # Параметры берутся из показанного владельцу preview и его явного решения;
-            # отсутствие любого из них не должно превратиться в неявное согласие.
-            if not all((args.reviewed_spec_sha256, args.reviewed_spec_revision, args.chat_reference, args.artifact)):
-                parser.error("approve-mvp requires --reviewed-spec-sha256, --reviewed-spec-revision, --chat-reference and --artifact; inspect --preview first")
+            if not all((args.thread_id, args.reviewed_spec_sha256, args.reviewed_spec_revision, args.chat_reference, args.artifact)):
+                parser.error("approve-mvp requires --thread-id, --reviewed-spec-sha256, --reviewed-spec-revision, --chat-reference and --artifact; inspect --preview first")
             result = attest_new_product_mvp_approval(
                 args.target.resolve(), args.session, args.reviewed_spec_sha256, args.reviewed_spec_revision,
-                args.chat_reference, args.artifact,
+                args.chat_reference, args.artifact, thread_id=args.thread_id,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "socrates" and args.socrates_command == "diagnose":
