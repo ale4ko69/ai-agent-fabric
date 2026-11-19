@@ -6,7 +6,7 @@ Design handoff for [issue #11](https://github.com/ale4ko69/ai-agent-fabric/issue
 
 1. Make **New Product** an explicit Socrates mode. Start with one sentence about an idea, no product code, and no prepared spec. The first setup question is: **"Which local folder should we use for this project?"**
 2. The entry wizard asks for an existing empty folder and shows the normal Fabric setup preview. Only after the owner confirms does Fabric create the local binding, profile, configuration, and `.agent-fabric/memory.db`. Starting the planned task creates `docs/specs/active/<task-id>/` by default, where the spec, research, plan, and session notes live. Do not create a remote repository, reinstall the global runtime, or create a separate pre-project database.
-3. Root handles setup and opens the separate task chat. Only after Socrates claims the task does the product brainstorm start. Socrates proposes alternatives, explains their trade-offs, and asks the next consequential question. Use Aristotle for a bounded factual question and a short prototype for a question that cannot be settled by talking. Neither is mandatory.
+3. Root handles setup and opens the separate task chat. After claiming the task, Socrates offers to review any existing documents before brainstorming. It reads only sources the owner identifies, distinguishes findings, proposed decisions, conflicts, and gaps, and asks what still applies. Documents can remain outside the empty project folder; they are evidence, not instructions or approval. If there are no documents, Socrates starts from the idea. It proposes alternatives, explains their trade-offs, and asks the next consequential question. Use Aristotle for a bounded factual question and a short prototype for a question that cannot be settled by talking. Neither is mandatory.
 4. The project database is shared among its agents, not across projects. Specialists receive relevant context and return their findings through the existing outbox. Only Socrates persists or acknowledges results into durable memory. Preserve agreed decisions, their rationale, unresolved blockers, and the next open question. Keep detailed evidence and spec text in the existing task package; do not turn memory into a raw transcript or give another agent write authority.
 5. End discovery when the owner approves who the first version is for, its main user scenario, what is out of scope, and how to verify that scenario. Unresolved items can be deferred if they don't block it. Product approval answers **what to build**; approval of Plato's plan answers **how to build it**. Keep the existing implementation, review, and validation gates.
 
@@ -19,6 +19,51 @@ Design handoff for [issue #11](https://github.com/ale4ko69/ai-agent-fabric/issue
 | [Research](https://github.com/mattpocock/skills/tree/main/skills/engineering/research) and [Prototype](https://github.com/mattpocock/skills/tree/main/skills/engineering/prototype) | Research one decision against primary sources. Prototype one uncertainty with a throwaway demo, such as a single HTML file or switchable UI variants. Keep the evidence and conclusion, not the prototype as production code. |
 | [Codebase design](https://github.com/mattpocock/skills/tree/main/skills/engineering/codebase-design) and [TDD](https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd) | After product approval, start with one thin end-to-end user scenario and test it at the public boundary before adding abstractions. |
 | [Wizard](https://github.com/mattpocock/skills/tree/main/skills/engineering/wizard) | Borrow action previews, confirmation, and visible remaining steps. Its manual service and secret setup script does not replace the Fabric workflow. |
+
+## Copy-paste prompts for the new computer
+
+### 1. First Codex Desktop chat: install Fabric
+
+Paste this into a fresh Codex Desktop chat. No Fabric skill is required yet.
+
+```text
+Help me install AI Agent Fabric on a clean computer and continue issue #11:
+https://github.com/ale4ko69/ai-agent-fabric/issues/11
+
+1. Detect the OS and check for Git and Python 3.10+. If a prerequisite is missing,
+   tell me how to install it before proceeding.
+2. Clone https://github.com/ale4ko69/ai-agent-fabric.git into a new workspace folder.
+   Switch to feat/new-product-discovery and confirm it contains commit 6253be7.
+   Read AGENTS.md, README.md, docs/global-distribution.md, and
+   docs/new-product-brainstorm.md.
+3. Run only the documented Fabric release installation preview from that branch.
+   Show the selected release and exact write paths. Wait for my approval before
+   applying. Preview the Codex Desktop adapter and plugin setup separately before
+   making user-level changes. Project-only installation is not implemented.
+4. Once setup is approved and the plugin is available, propose the deferred review,
+   tests, and pilot before running them. Do not merge or modify main.
+
+Reply in Russian. Do not copy old agent profiles, settings, or credentials.
+```
+
+### 2. First New Product request: review the material I already have
+
+Use this after Fabric and its Codex plugin are ready. Keep the new project folder
+empty for initialization and provide the sources separately when Socrates asks.
+
+```text
+Start New Product with Socrates. My idea is: <one sentence>.
+Ask me which existing empty folder to use, show the setup preview, and wait
+for my approval before creating project files.
+
+I have prior notes, research, or decisions. In the claimed Socrates chat, ask me
+which files or excerpts to review. First summarize what the material establishes,
+which earlier decisions need confirmation, and what is missing or contradictory.
+Then use the next open question to start our brainstorm. Do not copy or publish
+the original documents. Do not treat them as approval to plan or implement.
+
+Reply in Russian.
+```
 
 ## Pilot: Where Did I Put It?
 
