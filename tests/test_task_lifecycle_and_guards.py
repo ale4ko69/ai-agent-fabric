@@ -244,6 +244,20 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
 
     def test_new_product_mvp_gate_rejects_prose_closure_skip_and_planning_request(self) -> None:
         package, preview, decision = self._new_product_discovery()
+        source = self.project.parent / "historical-product-notes.md"
+        source.write_text(
+            "# Earlier MVP decision\n\nMVP approved for the earlier offline checklist proposal.\n",
+            encoding="utf-8",
+        )
+        research = package / "research.md"
+        research.write_text(
+            research.read_text(encoding="utf-8")
+            + "\n## Existing materials review\n\n"
+            "historical-product-notes.md, Earlier MVP decision: says MVP approved historically, "
+            "not a current owner decision on this scope and acceptance criteria.\n"
+            "Next question: which earlier decisions still apply?\n",
+            encoding="utf-8",
+        )
         state = package / "session-state.md"
         state.write_text(state.read_text(encoding="utf-8").replace("Pending.", "Approved by owner."), encoding="utf-8")
         before = (self.project / ".agent-fabric/memory.db").read_bytes()
@@ -263,6 +277,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
                 "required_outputs": ["plan.md"],
             })
         restored = restore_task(self.project, "new-product")
+        self.assertFalse(any(item["kind"] == "new-product-mvp-approved" for item in restored["memory"]["records"]))
         self.assertEqual(restored["memory"]["lifecycle"]["next_action"], "discovery")
         self.assertEqual(restored["memory"]["steps"][1]["status"], "in-progress")
         self.assertEqual(restored["memory"]["steps"][2]["status"], "pending")
