@@ -26,11 +26,76 @@ ai-agent-fabric work /path/to/project --json
 ai-agent-fabric start /path/to/project --title "Fix save error" --type small-bug --json
 ```
 
+### Explicit New Product discovery
+
+New Product v1 is delivered only on the supported **Codex plugin** surface, including
+its separate-chat handoff. Copilot/Claude end-to-end New Product delivery is not
+supported. Normal onboarding and ordinary start/restore for those clients are
+unchanged. A Codex binding is required for `--new-product`; it is not proof that the
+plugin or chat capability is available, which the skill must establish before entry.
+No project-only installation mode is introduced.
+
+Choose an existing empty local folder first, including no hidden entries. Detect the
+host/Bash and client, then use the canonical initialization preview:
+
+```text
+ai-agent-fabric project init <project> --client codex --require-empty --preview
+```
+
+Only after explicit approval of that preview, repeat without `--preview`.
+`--require-empty` rechecks the folder before both preview and application; it never
+creates a missing folder or removes entries. Initialization writes only the normal
+local binding/profile/config/overlay/memory. It does not initialize Git, create a
+remote repository, install dependencies, or reinstall global Fabric.
+
+Then preview a separate ordinary planned task and obtain its own confirmation:
+
+```text
+ai-agent-fabric start <project> --title "<title>" --type planned --new-product --json
+```
+
+Repeat with `--apply` only after confirmation. `--new-product` is opt-in and rejected
+for `small-bug`. The package and lifecycle remain ordinary planned work, defaulting to
+`docs/specs/active/<task-id>/`. Mode is stored in the existing `session-state.md`,
+without changing task metadata or the memory schema. Its `Mode: new-product` line and
+single `## Next open question` section must be preserved by Socrates.
+The existing task-start audit record also preserves the opt-in so removing that
+markdown marker cannot turn a newly created New Product task into an ordinary task
+to bypass MVP approval.
+
+Start and restore pass `mode`, `skill`, `session_state`, and `next_open_question` to the
+separate Socrates chat only for opted-in tasks. Root still only opens/reopens the chat;
+brainstorming begins after claim. Ordinary starts/restores retain their existing output
+shape. Restore is read-only and neither restarts discovery nor reinitializes the folder.
+See the [New Product workflow](workflow.md#new-product-opt-in).
+
+Before closing or skipping discovery, claimed Socrates previews the exact MVP binding:
+
+```text
+ai-agent-fabric socrates approve-mvp <project> --session <id> --preview --json
+```
+
+After presenting that spec to the owner and receiving explicit approval, Socrates
+writes concise decision evidence inside this task's `evidence/` directory, then records:
+
+```text
+ai-agent-fabric socrates approve-mvp <project> --session <id> --reviewed-spec-sha256 <digest> --reviewed-spec-revision <revision> --chat-reference <source> --artifact <task-package>/evidence/mvp-owner-decision.md --json
+```
+
+The existing memory `records` table stores this agent-attested approval, bound to the
+task id, full spec digest/revision, and decision-artifact digest. It does not authenticate
+the owner's identity independently. Prose in session state cannot substitute for it.
+Missing or stale approval rejects discovery closure/skip, subsequent lifecycle
+transitions, and planning request submission/dispatch without advancing the task.
+Changing the spec, its revision, or the decision artifact requires renewed approval.
+MVP approval never replaces the ordinary Kepler/reviewed-plan implementation approval.
+
 ## Socrates and task specifications
 
 | Command | Prerequisites and state change | Typical next step |
 | --- | --- | --- |
 | `socrates claim <project> --session <id> --thread-id <id>` | Prepared task; records its separate chat claim. | Read the durable continuation. |
+| `socrates approve-mvp <project> --session <id> --preview` | New Product on Codex; reads exact MVP spec digest/revision. Without `--preview`, requires a claimed Socrates chat, matching reviewed values, decision source and task-local evidence; appends an approval record. | Close discovery through the ordinary step command; normal implementation gates still apply. |
 | `socrates step <project> --session <id> --step <step> --status <status>` | Claimed chat; advances a checklist step. Closing requires existing evidence and a reason. | Follow the returned continuation. |
 | `socrates diagnose <project> --session <id>` | Bound project and existing session; reads state and Guard outcomes only. | Follow the reported next action. |
 | `socrates resolve-guard <project> ...` | Claimed task and existing blocked or escalated Guard; records owner direction and evidence. | Resume the preserved step. |
@@ -83,6 +148,12 @@ locations and adapter contracts. The following mutations should first be run wit
 | `project init <project> --client <client>` | Creates a binding and project-owned state; preview first. | Inspect `project context`. |
 | `project status <project>` / `context <project>` | Read binding status or pinned contract paths. | Initialize only on explicit request or enter work. |
 | `project command-preview <project> <name>` | Resolves a declared command after host checks; it does not execute it. | Decide whether the declared action is authorized. |
+
+The release's `skills/` and the Fabric-owned Codex plugin include `new-product`;
+the supported v1 delivery surface is the Codex plugin only, not Copilot or Claude.
+Legacy direct Codex skill links retain their five-name registry and ownership-record
+format; New Product does not require adding a user-level link or changing that record.
+No global delivery action is triggered by starting or restoring a project task.
 
 `bootstrap bash` reports an installation plan; `--install` explicitly applies it.
 `secret prompt <project> --destination <relative-path> --label <label> --preview`

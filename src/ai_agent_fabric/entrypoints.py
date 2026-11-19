@@ -8,7 +8,7 @@ from typing import Any
 from .harness import flush_guard_traces, resume_snapshot
 from .memory import activate_task_lifecycle, archive_completed_lifecycle, archive_preflight, database_path, initialize, prepare_socrates_chat, record, require_current_schema
 from .identifiers import require_task_id, slugify
-from .task_specs import archive_task as archive_task_package, archived_package_path, create_task, package_path, task_root, workflow_steps
+from .task_specs import archive_task as archive_task_package, archived_package_path, create_task, new_product_context, package_path, task_root, workflow_steps
 
 
 def work_router(project_root: Path, selector: str | None = None) -> dict[str, Any]:
@@ -31,27 +31,32 @@ def work_router(project_root: Path, selector: str | None = None) -> dict[str, An
     }
 
 
-def start_preview(project_root: Path, title: str, work_class: str, task_id: str | None = None) -> dict[str, str]:
-    """Return the exact package that an explicit start operation would create."""
+def start_preview(project_root: Path, title: str, work_class: str, task_id: str | None = None, *, new_product: bool = False) -> dict[str, str]:
+    """Показать пакет; opt-in из CLI допустим только внутри обычного planned workflow."""
+    if new_product and work_class != "planned":
+        raise ValueError("New Product requires planned work")
     stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
     package = package_path(project_root, stable_id)
     if package.exists():
         raise FileExistsError(f"Task package already exists: {package}")
-    return {
+    preview = {
         "task_id": stable_id,
         "work_class": work_class,
         "package": str(package),
         "action": "create-project-local-task-package-and-request-separate-socrates-chat",
     }
+    if new_product:
+        preview["mode"] = "new-product"
+    return preview
 
 
-def start_task(project_root: Path, title: str, work_class: str, task_id: str | None = None) -> dict[str, Any]:
-    """Create a task package and wait for a separate Socrates chat to claim it."""
-    start_preview(project_root, title, work_class, task_id)
+def start_task(project_root: Path, title: str, work_class: str, task_id: str | None = None, *, new_product: bool = False) -> dict[str, Any]:
+    """После подтверждения start сохранить opt-in в пакете до передачи отдельному Socrates."""
+    start_preview(project_root, title, work_class, task_id, new_product=new_product)
     root = project_root.resolve()
     stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
     _ensure_memory(root)
-    package = create_task(root, title, work_class, stable_id)
+    package = create_task(root, title, work_class, stable_id, new_product=new_product)
     try:
         lifecycle = activate_task_lifecycle(
             root, stable_id, title, str(package.relative_to(root)).replace("\\", "/"), workflow_steps(work_class), "start",
@@ -63,7 +68,11 @@ def start_task(project_root: Path, title: str, work_class: str, task_id: str | N
         shutil.rmtree(package, ignore_errors=True)
         raise
     flush_guard_traces(root)
-    return {"package": str(package), "task_id": stable_id, "socrates_chat_request": _socrates_chat_request(stable_id, title)}
+    result: dict[str, Any] = {"package": str(package), "task_id": stable_id, "socrates_chat_request": _socrates_chat_request(stable_id, title)}
+    if new_product:
+        result["mode"] = "new-product"
+        result["socrates_chat_request"].update(new_product_context(root, stable_id))
+    return result
 
 
 def recover_unicode_package(project_root: Path, source_name: str, task_id: str | None = None, *, apply: bool = False) -> dict[str, str]:
@@ -116,6 +125,10 @@ def restore_task(project_root: Path, task_id: str) -> dict[str, Any]:
     require_current_schema(root)
     snapshot = resume_snapshot(root, metadata["id"])
     snapshot["socrates_chat_request"] = _socrates_chat_request(metadata["id"], metadata["title"])
+    context = new_product_context(root, metadata["id"])
+    if context:
+        snapshot["mode"] = context["mode"]
+        snapshot["socrates_chat_request"].update(context)
     return snapshot
 
 

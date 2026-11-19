@@ -137,12 +137,17 @@ def _task_metadata(task_id: str, title: str, work_class: str) -> str:
     ) + "\n"
 
 
-def create_task(project_root: Path, title: str, work_class: str, task_id: str | None = None) -> Path:
+def create_task(project_root: Path, title: str, work_class: str, task_id: str | None = None, *, new_product: bool = False) -> Path:
+    """Создать обычный пакет; opt-in от start меняет только начальные артефакты discovery."""
     root = project_root.resolve()
     if not root.is_dir():
         raise ValueError(f"Target repository does not exist: {root}")
     if work_class not in WORK_CLASSES:
         raise ValueError(f"Unsupported work class: {work_class}")
+    if new_product and work_class != "planned":
+        raise ValueError("New Product requires planned work")
+    if new_product:
+        require_new_product_client(root)
     stable_id = require_task_id(task_id) if task_id is not None else slugify(title)
     package = package_path(root, stable_id)
     if package.exists():
@@ -193,8 +198,69 @@ def create_task(project_root: Path, title: str, work_class: str, task_id: str | 
                 indent=2,
             ) + "\n",
         )
-        _write(package / "session-state.md", "# Session state\n\nStatus: PENDING\n\n## Progress\n\n- [ ] Task not started\n")
+        session_state = "# Session state\n\nStatus: PENDING\n\n## Progress\n\n- [ ] Task not started\n"
+        if new_product:
+            session_state = (
+                "# Session state\n\nMode: new-product\n\nStatus: PENDING\n\n"
+                "## Progress\n\n- [ ] Socrates chat not claimed; discovery not started\n\n"
+                "## Next open question\n\nWho is the first user, and what problem should this product solve for them?\n\n"
+                "## Discovery decisions\n\nRecord agreed facts, alternatives, assumptions, and deferred ideas here.\n\n"
+                "## MVP owner decision\n\nPending. Before normal planning, present the exact MVP scope, non-goals, "
+                "acceptance criteria, and unresolved risks from spec.md. Use socrates approve-mvp "
+                "--preview, then record the owner's explicit decision with the reviewed spec digest, "
+                "revision, chat reference, and task-local evidence artifact. Summarize it here; "
+                "this note alone does not unlock planning.\n"
+            )
+        _write(package / "session-state.md", session_state)
     return package
+
+
+def new_product_context(project_root: Path, task_id: str) -> dict[str, str]:
+    """Для start/restore прочитать opt-in и вопрос из пакета, не создавая новую память."""
+    package = package_path(project_root, task_id)
+    state = package / "session-state.md"
+    if not state.exists() and not state.is_symlink():
+        return {}
+    content = _package_file(package, "session-state.md").read_text(encoding="utf-8")
+    if "Mode: new-product" not in content.splitlines():
+        return {}
+    heading = "## Next open question\n"
+    if content.count(heading) != 1:
+        raise ValueError("New Product session-state.md requires one Next open question heading")
+    question = content.split(heading, 1)[1].split("\n## ", 1)[0].strip()
+    return {
+        "mode": "new-product",
+        "skill": "agent-fabric-new-product",
+        "session_state": str(state.relative_to(project_root.resolve())).replace("\\", "/"),
+        "next_open_question": question,
+    }
+
+
+def require_new_product_client(project_root: Path) -> None:
+    """Ограничить opt-in из CLI и create_task привязкой Codex; установку plugin не выполнять."""
+    binding = _load_json_object(state_path(project_root, "fabric-binding.json"), "project binding")
+    if binding.get("client") != "codex":
+        raise ValueError("New Product v1 requires a Codex-bound project and the Codex plugin surface")
+
+
+def new_product_mvp_preview(project_root: Path, task_id: str) -> dict[str, object]:
+    """Для Socrates и memory-gate прочитать точную spec-ревизию, не выдавая разрешение."""
+    if not new_product_context(project_root, task_id):
+        raise ValueError("MVP approval requires the saved New Product mode and session state")
+    require_new_product_client(project_root)
+    errors = validate_task(project_root, task_id)
+    if errors:
+        raise ValueError("Cannot approve invalid New Product package: " + "; ".join(errors))
+    package = package_path(project_root, task_id)
+    metadata = _load_json_object(_package_file(package, "task.json"), "task metadata")
+    if metadata["id"] != task_id or metadata["work_class"] != "planned":
+        raise ValueError("MVP approval requires the matching planned New Product task")
+    return {
+        "task_id": task_id,
+        "spec_revision": metadata["workflow"]["spec_revision"],
+        "spec_sha256": _sha256_file(_package_file(package, "spec.md")),
+        "scope_artifact": str((package / "spec.md").relative_to(project_root.resolve())).replace("\\", "/"),
+    }
 
 
 def workflow_steps(work_class: str) -> list[str]:

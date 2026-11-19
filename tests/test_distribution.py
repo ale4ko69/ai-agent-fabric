@@ -28,6 +28,85 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DistributionLifecycleTest(unittest.TestCase):
+    def test_new_product_init_rechecks_an_existing_empty_folder_before_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            project = root / "project"
+            project.mkdir()
+            install_release(SOURCE_ROOT, home, "test-new-product")
+
+            preview = distribution.project_onboarding_preview(project, "codex", home, require_empty=True)
+
+            self.assertTrue(all(path.is_relative_to(project / ".agent-fabric") for path in preview))
+            self.assertEqual(list(project.iterdir()), [])
+            hidden = project / ".owner-file"
+            hidden.write_text("preserve", encoding="utf-8")
+            for operation in (distribution.project_onboarding_preview, distribution.onboard_project):
+                with self.assertRaisesRegex(ValueError, "empty local folder"):
+                    operation(project, "codex", home, require_empty=True)
+            self.assertEqual(hidden.read_text(encoding="utf-8"), "preserve")
+            self.assertFalse((project / ".agent-fabric").exists())
+
+            hidden.unlink()
+            distribution.onboard_project(project, "codex", home, require_empty=True)
+
+            self.assertEqual({path.name for path in project.iterdir()}, {".agent-fabric"})
+            self.assertTrue((project / ".agent-fabric/memory.db").is_file())
+            self.assertEqual(project_status(project, home)["status"], "bound")
+
+    def test_new_product_init_does_not_create_a_missing_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "missing"
+            home = root / "home"
+            for operation in (distribution.project_onboarding_preview, distribution.onboard_project):
+                with self.assertRaisesRegex(ValueError, "does not exist"):
+                    operation(project, "codex", home, require_empty=True)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_new_product_plugin_registry_preserves_legacy_skill_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            links = root / "codex-skills"
+            owner_skill = links / "new-product"
+            owner_skill.mkdir(parents=True)
+            (owner_skill / "SKILL.md").write_text("Owner skill", encoding="utf-8")
+            release = install_release(SOURCE_ROOT, home, "test-skills")
+            plugin = home / "marketplace/plugins/agent-fabric"
+            source_names = {path.name for path in (SOURCE_ROOT / "skills").iterdir() if (path / "SKILL.md").is_file()}
+
+            self.assertEqual(set(distribution.FABRIC_SKILL_NAMES), source_names)
+            self.assertEqual(distribution.CODEX_SKILL_NAMES, ("work", "start", "restore", "harness", "guards"))
+            self.assertEqual({path.name for path in (plugin / "skills").iterdir()}, source_names)
+            self.assertEqual(
+                (plugin / "skills/new-product/SKILL.md").read_bytes(),
+                (release / "skills/new-product/SKILL.md").read_bytes(),
+            )
+            declaration = json.loads((SOURCE_ROOT / "release-source.json").read_text(encoding="utf-8"))
+            self.assertEqual(declaration["home_outputs"], list(distribution.RELEASE_HOME_OUTPUTS))
+            self.assertFalse((home / "skills/new-product").exists())
+
+            with mock.patch.object(distribution, "codex_skill_root", return_value=links):
+                try:
+                    distribution.enable_codex_skills(home)
+                except PermissionError as error:
+                    self.skipTest(f"host does not permit test symlink creation: {error}")
+                record_path = distribution.codex_skill_record_path(home)
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                self.assertEqual(set(record["skills"]), set(distribution.CODEX_SKILL_NAMES))
+                self.assertEqual(
+                    {item["action"] for item in distribution.codex_skill_enable_preview(home)["skills"]},
+                    {"already-installed"},
+                )
+                install_release(SOURCE_ROOT, home, "test-skills-updated")
+                self.assertEqual(json.loads(record_path.read_text(encoding="utf-8"))["release"], "test-skills-updated")
+                distribution.disable_codex_skills(home)
+                self.assertFalse(record_path.exists())
+            self.assertEqual({path.name for path in links.iterdir()}, {"new-product"})
+            self.assertEqual((owner_skill / "SKILL.md").read_text(encoding="utf-8"), "Owner skill")
+
     def test_release_preview_includes_client_records_and_preserves_managed_entry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

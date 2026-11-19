@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import sqlite3
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any
 from .identifiers import is_safe_identifier
 
 from .project_state import state_path
+from .task_specs import new_product_context, new_product_mvp_preview, package_path, workflow_steps
 
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
@@ -355,6 +357,10 @@ def activate_task_lifecycle(
                 (active["next_action"], active["status"], session_id),
             )
             if start_record is not None:
+                # Opt-in сохраняется также в существующем audit-record: удаление markdown-маркера
+                # после старта не должно превращать New Product в обычную задачу для обхода gate.
+                if new_product_context(project_root, session_id):
+                    start_record = {**start_record, "mode": "new-product"}
                 connection.execute(
                     "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, ?, 'orchestrator', ?, ?)",
                     (session_id, "task-started", "task-lifecycle-started", json.dumps(start_record, ensure_ascii=False, sort_keys=True)),
@@ -534,6 +540,10 @@ def advance_task_step(
             ).fetchone()
             if row is None:
                 raise KeyError(step_id)
+            # Проверка внутри того же write-boundary предшествует закрытию discovery (включая
+            # skipped) и любому последующему переходу; отказ не продвигает checklist.
+            if (step_id == "discovery" and closing) or step_id in workflow_steps("planned")[2:]:
+                _require_new_product_mvp_approval(connection, project_root, session_id)
             if row["status"] in {"done", "skipped"}:
                 if row["status"] != status:
                     raise ValueError("completed task steps are immutable")
@@ -558,9 +568,118 @@ def advance_task_step(
         connection.close()
 
 
+def _new_product_mvp_scope(connection: sqlite3.Connection, project_root: Path, session_id: str) -> dict[str, object] | None:
+    """Распознать opt-in по состоянию или старому audit trail; обычные задачи не менять."""
+    lifecycle = connection.execute("SELECT 1 FROM task_lifecycles WHERE session_id=?", (session_id,)).fetchone()
+    if lifecycle is None:
+        return None
+    records = connection.execute(
+        "SELECT kind, evidence_json FROM records WHERE session_id=? AND actor='orchestrator' "
+        "AND kind IN ('task-started', 'new-product-mvp-approved')", (session_id,)
+    ).fetchall()
+    recorded_mode = any(
+        row["kind"] == "new-product-mvp-approved" or json.loads(row["evidence_json"]).get("mode") == "new-product"
+        for row in records
+    )
+    if not recorded_mode and not new_product_context(project_root, session_id):
+        return None
+    return new_product_mvp_preview(project_root, session_id)
+
+
+def _mvp_decision_digest(project_root: Path, session_id: str, artifact: str) -> str:
+    """Связать решение с существующим evidence-файлом именно этого task package, а не чужим."""
+    if not _safe_path_reference(artifact):
+        raise ValueError("MVP decision requires a safe task-local evidence artifact")
+    package = package_path(project_root, session_id)
+    evidence = (package / "evidence").resolve()
+    path = (project_root.resolve() / artifact).resolve(strict=True)
+    if not evidence.is_relative_to(package) or not path.is_relative_to(evidence) or not path.is_file():
+        raise ValueError("MVP decision artifact must exist inside this task's evidence directory")
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _require_new_product_mvp_approval(connection: sqlite3.Connection, project_root: Path, session_id: str) -> None:
+    """Перед lifecycle/delegation проверить последнее решение и неизменность spec/evidence."""
+    scope = _new_product_mvp_scope(connection, project_root, session_id)
+    if scope is None:
+        return
+    row = connection.execute(
+        "SELECT evidence_json FROM records WHERE session_id=? AND kind='new-product-mvp-approved' "
+        "AND actor='orchestrator' ORDER BY id DESC LIMIT 1", (session_id,)
+    ).fetchone()
+    message = "New Product planning requires current MVP owner approval; use socrates approve-mvp --preview"
+    if row is None:
+        raise PermissionError(message)
+    try:
+        approval = json.loads(row["evidence_json"])
+        if (
+            not isinstance(approval, dict)
+            or not all(approval.get(key) == value for key, value in scope.items())
+            or type(approval.get("spec_revision")) is not int
+            or approval.get("approved") is not True
+            or approval.get("approved_by") != "human"
+            or approval.get("approval_method") != "agent-attested-chat"
+            or not isinstance(approval.get("chat_reference"), str)
+            or not approval["chat_reference"].strip()
+            or _mvp_decision_digest(project_root, session_id, approval.get("decision_artifact", "")) != approval.get("decision_artifact_sha256")
+        ):
+            raise PermissionError(message)
+    except (OSError, ValueError):
+        raise PermissionError(message) from None
+
+
+def attest_new_product_mvp_approval(
+    project_root: Path, session_id: str, reviewed_spec_sha256: str, reviewed_spec_revision: int,
+    chat_reference: str, decision_artifact: str, actor: str = "orchestrator",
+) -> dict[str, Any]:
+    """Из claimed Socrates записать agent-attested решение владельца для точной spec.
+
+    Digest и ревизия приходят из preview, chat_reference и evidence — из явного решения.
+    Сначала проверяются claim, scope и evidence; только затем existing records получает
+    разрешение. Это не аутентификация владельца и не разрешение на implementation.
+    """
+    if actor != "orchestrator" or not _safe_identifier(session_id):
+        raise ValueError("only the orchestrator may attest MVP owner approval")
+    if not isinstance(chat_reference, str) or not chat_reference.strip() or len(chat_reference) > 256 or any(c in chat_reference for c in "\r\n"):
+        raise ValueError("A short source chat reference is required")
+    connection = connect(project_root, create=False)
+    try:
+        _require_current_schema_connection(connection)
+        with connection:
+            chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
+            if chat is None or chat["status"] != "claimed":
+                raise PermissionError("MVP owner approval requires a claimed separate Socrates chat")
+            scope = _new_product_mvp_scope(connection, project_root, session_id)
+            if scope is None:
+                raise ValueError("MVP approval requires an existing New Product task lifecycle")
+            if type(reviewed_spec_revision) is not int or reviewed_spec_revision != scope["spec_revision"] or reviewed_spec_sha256 != scope["spec_sha256"]:
+                raise ValueError("The MVP spec changed after preview; present the new scope and obtain owner approval again")
+            evidence = {
+                **scope,
+                "approved": True,
+                "approved_by": "human",
+                "approval_method": "agent-attested-chat",
+                "chat_reference": chat_reference.strip(),
+                "decision_artifact": decision_artifact,
+                "decision_artifact_sha256": _mvp_decision_digest(project_root, session_id, decision_artifact),
+            }
+            _reject_secret_fields(evidence)
+            connection.execute(
+                "INSERT INTO records(session_id, kind, actor, summary, evidence_json) "
+                "VALUES (?, 'new-product-mvp-approved', 'orchestrator', 'mvp-owner-scope-approved', ?)",
+                (session_id, json.dumps(evidence, ensure_ascii=False, sort_keys=True)),
+            )
+            connection.execute("UPDATE sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
+        return evidence
+    finally:
+        connection.close()
+
+
 def record(project_root: Path, session_id: str, kind: str, actor: str, summary: str, evidence: dict[str, Any]) -> None:
     if actor != "orchestrator" or not all(_safe_identifier(value) for value in (session_id, kind)) or not isinstance(summary, str) or not summary.strip() or not isinstance(evidence, dict):
         raise ValueError("only the orchestrator may persist records with safe identifiers, summary, and object evidence")
+    if kind == "new-product-mvp-approved":
+        raise ValueError("MVP owner approval must use the claimed Socrates attestation operation")
     _reject_secret_fields({"summary": summary, "evidence": evidence})
     connection = connect(project_root, create=False)
     try:
@@ -583,6 +702,8 @@ def submit_request(project_root: Path, request: dict[str, Any], actor: str = "or
     connection = connect(project_root, create=False)
     try:
         _require_current_schema_connection(connection)
+        if request["agent"] == "plan":
+            _require_new_product_mvp_approval(connection, project_root, request["session_id"])
         cursor = connection.execute(
             "INSERT INTO delegation_requests(idempotency_key, session_id, agent, payload_json) VALUES (?, ?, ?, ?) "
             "ON CONFLICT(idempotency_key) DO NOTHING",
@@ -619,10 +740,12 @@ def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str
         _require_current_schema_connection(connection)
         with connection:
             row = connection.execute(
-                "SELECT status FROM delegation_requests WHERE idempotency_key=?", (idempotency_key,)
+                "SELECT status, agent, session_id FROM delegation_requests WHERE idempotency_key=?", (idempotency_key,)
             ).fetchone()
             if row is None:
                 raise KeyError(idempotency_key)
+            if row["agent"] == "plan":
+                _require_new_product_mvp_approval(connection, project_root, row["session_id"])
             if row["status"] == "dispatched":
                 return False
             connection.execute(

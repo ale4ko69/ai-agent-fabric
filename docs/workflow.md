@@ -84,6 +84,65 @@ Kepler independently challenges it. Kepler cannot widen the spec: a new concern 
 deferred or explicitly accepted by the human owner as a spec amendment, after which
 Plato revises the plan and Kepler gives a fresh verdict.
 
+## New Product (opt-in)
+
+The explicit `new-product` skill is a discovery mode for ordinary planned work, not
+the default entry, a new role, or a second lifecycle. **V1 delivery supports only the
+Codex plugin surface and its separate-chat handoff.** It does not claim end-to-end
+Copilot or Claude New Product support; their ordinary Fabric plumbing is unchanged.
+On an unsupported surface, stop without initialization, installation, or a substitute
+handoff. Project-only installation remains a separate future design, not this feature.
+
+First the owner chooses an existing
+empty local folder. Root detects host/Bash and client, presents canonical
+`project init --client codex --require-empty --preview`, and obtains explicit approval before applying
+the local binding/profile/config/overlay/memory writes. No source scaffold, Git setup,
+remote repository, dependency installation, or global reinstall belongs to this entry.
+
+After initialization, Root separately previews
+`start --type planned --new-product`, obtains confirmation, and applies the ordinary
+start. It creates the normal task package under the configured root
+(`docs/specs/active/<task-id>/` by default) and requests a separate Socrates chat.
+Root forwards the entire request, including the saved mode and next open question,
+and stops. Root remains entry/recovery only; real brainstorming starts only in the
+separate chat after its durable claim.
+
+Socrates collaboratively explores users, problems, outcomes, constraints, alternatives,
+and trade-offs. It asks focused questions, distinguishes assumptions from facts, and
+uses Aristotle selectively for bounded research rather than launching a mandatory
+research phase for every idea. An optional question-led prototype must have an agreed
+learning question, scope, and success signal; executable implementation still needs
+the normal reviewed plan and owner approval.
+
+Before normal planning, Socrates presents the exact MVP scope, non-goals, acceptance
+criteria, and unresolved risks from `spec.md` for explicit owner approval. It keeps
+discovery open until that decision. `socrates approve-mvp --preview` exposes the exact
+spec revision and digest; after the explicit decision, claimed Socrates records an
+agent-attested approval with those reviewed values, a chat reference, and an existing
+decision artifact inside this task's `evidence/` directory. This uses the existing
+memory records and authorization trust model, not a new schema or independent proof
+of owner identity.
+
+The runtime rejects closing or skipping discovery, further lifecycle transitions, and
+planning delegation submission/dispatch without a current MVP approval. The record
+binds the task id, spec revision, full spec digest, and decision-artifact digest.
+Changing any of those inputs requires renewed owner approval. A prose session-state
+note alone cannot unlock planning. A task-start audit marker preserves the opt-in even
+if its markdown marker is subsequently removed. This gate authorizes planning only,
+not implementation; all ordinary reviewed-plan approvals remain separate.
+
+Only Socrates persists discovery decisions and episodic memory. Aristotle and other
+specialists use the existing delegation/outbox protocol. The existing
+`session-state.md` stores `Mode: new-product`, progress, alternatives, the MVP owner
+decision, and one `## Next open question` section. Socrates updates it after meaningful
+answers; restore returns the saved question and state reference without writing or
+restarting discovery. The saved chat, pending results, and ordinary checklist remain
+authoritative. No new memory store or schema is introduced.
+
+After MVP approval, all ordinary planning, Kepler review, reviewed-package owner
+approval, implementation, review, authorized validation, and delivery gates remain.
+Ordinary start/restore outputs and workflow are unchanged unless this mode was chosen.
+
 ## Execution and review
 
 Heracles implements only the approved scope. After a state-changing action, the
