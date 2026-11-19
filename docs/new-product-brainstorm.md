@@ -1,6 +1,6 @@
 # New Product brainstorm and pilot
 
-Design handoff for [issue #11](https://github.com/ale4ko69/ai-agent-fabric/issues/11). This is an example of the proposed discovery flow, not a record of a pilot already run.
+Design handoff, implementation log, and pilot for [issue #11](https://github.com/ale4ko69/ai-agent-fabric/issues/11). The pilot below has not been run in Codex Desktop.
 
 ## Agreed direction
 
@@ -22,9 +22,9 @@ Design handoff for [issue #11](https://github.com/ale4ko69/ai-agent-fabric/issue
 
 ## Copy-paste prompts for the new computer
 
-### 1. First Codex Desktop chat: install Fabric
+### 1. First Codex Desktop chat: choose the installation track
 
-Paste this into a fresh Codex Desktop chat. No Fabric skill is required yet.
+For project-only installation, use the [clean-machine prompt in issue #11](https://github.com/ale4ko69/ai-agent-fabric/issues/11#issuecomment-7008216481). That branch does not deliver the New Product plugin. The prompt below is only for the separate #11 plugin pilot, if the owner elects to preview user-level setup. No Fabric skill is required yet.
 
 ```text
 Help me install AI Agent Fabric on a clean computer and continue issue #11:
@@ -33,13 +33,13 @@ https://github.com/ale4ko69/ai-agent-fabric/issues/11
 1. Detect the OS and check for Git and Python 3.10+. If a prerequisite is missing,
    tell me how to install it before proceeding.
 2. Clone https://github.com/ale4ko69/ai-agent-fabric.git into a new workspace folder.
-   Switch to feat/new-product-discovery and confirm it contains commit 6253be7.
+   Switch to feat/new-product-discovery and confirm it contains commit bad871d.
    Read AGENTS.md, README.md, docs/global-distribution.md, and
    docs/new-product-brainstorm.md.
 3. Run only the documented Fabric release installation preview from that branch.
    Show the selected release and exact write paths. Wait for my approval before
    applying. Preview the Codex Desktop adapter and plugin setup separately before
-   making user-level changes. Project-only installation is not implemented.
+   making user-level changes. Do not mix in the separate project-only branch.
 4. Once setup is approved and the plugin is available, propose the deferred review,
    tests, and pilot before running them. Do not merge or modify main.
 
@@ -75,7 +75,7 @@ An illustrative outcome, **not** part of the prompt: the owner chooses a first v
 
 1. In a disposable project folder on the next development machine, preview the Fabric setup. Cancel once and verify it wrote nothing, then approve and start the separate Socrates chat.
 2. Discuss at least two viable approaches, agree one decision, leave one question open, and close the chat before approving the MVP.
-3. Restore the task in a new chat. Verify that Socrates recovers what was chosen, why, and the next open question without re-interviewing the owner or entering implementation planning early. Confirm that specialist findings, if any, were acknowledged by Socrates and that the ordinary workflow resumes after scope approval.
+3. Reopen the same claimed Socrates chat and restore the task. Verify that Socrates recovers what was chosen, why, and the next open question without re-interviewing the owner or entering planning early. If the actual chat ID or exact reopening is unavailable, record the blocker rather than using a substitute. Confirm that specialist findings, if any, were acknowledged by Socrates and that the ordinary workflow resumes after scope approval.
 
 ## Research: project-only installation
 
@@ -93,16 +93,23 @@ Distinguish two guarantees: **no user-level writes by the Fabric installer or ad
 
 This is a separate proposal, not a prerequisite for #11. The comparison is based on Fabric source, Copilot's built-in documentation, and vendor repositories. No install or client session was run; Codex desktop and full exclusion of personal configuration remain unverified.
 
-## Handoff status
+## Issue #11 implementation log
 
-The implementation was drafted on `feat/new-product-discovery`. The developer reports that the two static review findings were addressed: MVP approval is tied to the accepted spec revision and decision evidence before planning can begin, and v1 delivery is explicitly limited to the Codex plugin. The correction has not been independently verified. Regression checks, plugin handoff, installation, and the live pilot are deferred to the next development machine. A fresh clone will not contain unpushed implementation changes; this note and issue #11 are already available on GitHub.
+| Published commit | What changed |
+|---|---|
+| [`6253be7`](https://github.com/ale4ko69/ai-agent-fabric/commit/6253be7) | Added folder-first Socrates New Product discovery, durable progress and restore, and a separate MVP approval gate before planning. |
+| [`c65bd68`](https://github.com/ale4ko69/ai-agent-fabric/commit/c65bd68) | Documented optional intake of existing materials and first-chat prompts. |
+| [`61aa995`](https://github.com/ale4ko69/ai-agent-fabric/commit/61aa995) | Added regression coverage: an "MVP approved" note in historical material cannot unlock planning. |
+| [`a7564ca`](https://github.com/ale4ko69/ai-agent-fabric/commit/a7564ca) | Approval writes require the supplied current thread ID to match the stored Socrates claim. This check does not independently authenticate the Desktop chat. |
+| [`bad871d`](https://github.com/ale4ko69/ai-agent-fabric/commit/bad871d) | Bound MVP approval to `mvp-scope.json` and preserved decision evidence. Editorial changes to `spec.md` do not revoke approval. If the owner already explicitly confirmed the changed commitments in chat, Socrates records that decision without asking again. Fabric blocks stale queued Plato requests; Socrates replaces them in the same task, preserving completed and unaffected work without automatically cancelling work already dispatched. |
+
+**Verified:** 58 focused lifecycle and task-package tests passed at `bad871d`. **Not yet verified:** plugin discovery, actual Desktop thread identity, and the live pilot. The independently published project-only installer is a separate track; neither branch contains the other.
 
 ## Next-machine checklist
 
 | Role | First action and expected result |
 |---|---|
-| Current development orchestrator | Open issue #11 and the feature branch. Confirm the branch is available, then authorize validation as a separate phase. Keep project-only installation separate from this change. |
-| CR-Agent | Review the two follow-up corrections together. Check that missing or stale MVP approval cannot open planning, and that New Product documentation and delivery make no unsupported client promises. |
-| Developer | Fix only confirmed findings. Keep the existing work and restore flows compatible. Do not patch every agent profile to add one Socrates-owned mode. |
-| Validation | Run the focused distribution and task-lifecycle tests, then verify the Codex plugin handoff. Confirm preview cancellation makes no changes, ordinary tasks still work, and changing the agreed spec invalidates an earlier MVP approval. |
-| Pilot Socrates | Open the sample project after the setup preview is approved. Run the pause-and-restore pilot above, keep durable decisions in the pilot project's memory, and hand off to Plato only after the owner accepts the MVP. Aristotle contributes only scoped research returned through the outbox. |
+| Setup | Use `feat/new-product-discovery` containing `bad871d`. Keep project-only installation separate. Preview the #11 plugin setup; apply only if approved. |
+| Desktop handoff | Confirm that the plugin exposes New Product, the actual Socrates thread can claim the task, and the same chat can be reopened and restored. Stop and record the precise blocker if any step is unavailable. |
+| Discovery pilot | Run once with no prior materials and once with owner-authorized materials. Pause mid-discovery and restore the open question without repeating completed work. Do not publish source materials. |
+| Approval and queue pilot | Edit wording in `spec.md` without reopening approval. Change a commitment in `mvp-scope.json`: planning must wait for a decision covering it. Record an explicit decision already given in chat without asking the owner twice. Verify that the old queued Plato request stays blocked and a replacement can proceed. Preserve unaffected work. |
