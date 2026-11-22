@@ -35,6 +35,8 @@ PROJECT_BINDING_FILE = "fabric-binding.json"
 PROJECT_UPDATE_FILE = "pending-update.json"
 CLIENT_RECORD_DIRECTORY = "clients"
 CODEX_SKILL_NAMES = ("work", "start", "restore", "harness", "guards")
+# Старые прямые ссылки сохраняют прежний состав и ownership; новые Skills доставляет plugin.
+FABRIC_SKILL_NAMES = (*CODEX_SKILL_NAMES, "new-product")
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+-]*$")
 SECRET_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,127}$")
 MANAGED_BLOCK_BEGIN = "<!-- AI-Agent-Fabric: begin -->"
@@ -454,14 +456,28 @@ def binding_preview(project_root: Path, release: str, client: str, fabric_home: 
     ]
 
 
-def project_onboarding_preview(project_root: Path, client: str, fabric_home: Path | None = None, release: str | None = None) -> list[Path]:
+def _require_empty_project(project_root: Path) -> None:
+    """Проверить выбранный владельцем каталог до preview и повторно перед локальной записью."""
+    project = project_root.resolve()
+    if not project.is_dir():
+        raise ValueError(f"Target project does not exist: {project}")
+    if next(project.iterdir(), None) is not None:
+        raise ValueError("New Product initialization requires an existing empty local folder")
+
+
+def project_onboarding_preview(project_root: Path, client: str, fabric_home: Path | None = None, release: str | None = None, *, require_empty: bool = False) -> list[Path]:
+    """Показать обычный init; require_empty из New Product проверяется без создания каталога."""
+    if require_empty:
+        _require_empty_project(project_root)
     home = (fabric_home or default_fabric_home()).expanduser().resolve()
     selected_release = release or load_installation(home)["current_release"]
     return binding_preview(project_root, selected_release, client, home)
 
 
-def onboard_project(project_root: Path, client: str, fabric_home: Path | None = None, release: str | None = None) -> Path:
-    """Create a project-owned overlay for the selected installed Fabric release."""
+def onboard_project(project_root: Path, client: str, fabric_home: Path | None = None, release: str | None = None, *, require_empty: bool = False) -> Path:
+    """Обычный init после подтверждения; opt-in повторяет проверку пустоты до любых записей."""
+    if require_empty:
+        _require_empty_project(project_root)
     home = (fabric_home or default_fabric_home()).expanduser().resolve()
     selected_release = release or load_installation(home)["current_release"]
     return bind_project(project_root, selected_release, client, home)
@@ -2029,7 +2045,12 @@ def _write_global_codex_marketplace(fabric_home: Path, release: str) -> None:
         else:
             shutil.rmtree(plugin)
     skills.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(fabric_home / "skills", skills)
+    # Plugin целиком принадлежит Fabric; legacy-прямые ссылки и их manifest не расширяются.
+    for name in FABRIC_SKILL_NAMES:
+        source = fabric_home / "releases" / release / "skills" / name
+        if not (source / "SKILL.md").is_file():
+            raise ValueError(f"Release is missing required Fabric skill: {source}")
+        shutil.copytree(source, skills / name)
     release_hooks = fabric_home / "releases" / release / "hooks"
     if not (release_hooks / "hooks.json").is_file():
         raise ValueError(f"Release is missing the Codex hook configuration: {release_hooks}")

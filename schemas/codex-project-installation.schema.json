@@ -32,8 +32,8 @@
     },
     "links": {
       "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
+      "minItems": 3,
+      "maxItems": 3,
       "uniqueItems": true,
       "description": "Runtime additionally verifies release identity, exact source/target pairing and native symlink observations.",
       "items": {
@@ -43,11 +43,11 @@
         "properties": {
           "path": {
             "type": "string",
-            "enum": [".codex/agents", ".agents/skills/agent-fabric-project"]
+            "enum": [".codex/agents", ".agents/skills/agent-fabric-project", ".agents/skills/agent-fabric-new-product"]
           },
           "target": {
             "type": "string",
-            "pattern": "^(?:\\.\\./){1,2}\\.agent-fabric/runtime/releases/(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/))[0-9A-Za-z](?:[0-9A-Za-z._+-]*[0-9A-Za-z_+-])?/(?:adapters/codex-project/agents|skills/project-entry)(?![\\s\\S])"
+            "pattern": "^(?:\\.\\./){1,2}\\.agent-fabric/runtime/releases/(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/))[0-9A-Za-z](?:[0-9A-Za-z._+-]*[0-9A-Za-z_+-])?/(?:adapters/codex-project/agents|skills/(?:project-entry|new-product))(?![\\s\\S])"
           },
           "kind": {"const": "directory"}
         }

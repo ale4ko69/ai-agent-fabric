@@ -91,14 +91,14 @@ def _snapshot(source: Path, release_prefix: str) -> tuple[dict[str, bytes], set[
     distribution._validate_release_assets(source)
     files: dict[str, bytes] = {}
     directories: set[str] = set()
-    for relative in distribution.RELEASE_ASSETS:
+    assets = [
+        relative for relative in distribution.RELEASE_ASSETS
+        if relative not in {"skills", "scripts"}
+    ]
+    assets.extend(("scripts/secret-entry.sh", "skills/project-entry", "skills/new-product"))
+    for relative in assets:
         if relative in EXCLUDED_ASSETS:
             continue
-        # Из scripts нужен только runtime-helper, не installer и не клиентские entry points.
-        if relative == "scripts":
-            relative = "scripts/secret-entry.sh"
-        elif relative == "skills":
-            relative = "skills/project-entry"
         origin = source / relative
         for item in [origin, *sorted(origin.rglob("*"))] if origin.is_dir() else [origin]:
             if "__pycache__" in item.parts or item.suffix == ".pyc":

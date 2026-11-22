@@ -93,6 +93,7 @@ def _links(version: str) -> list[dict[str, str]]:
         for path, target in (
             (".codex/agents", AGENT_DIRECTORY),
             (".agents/skills/agent-fabric-project", SKILL_DIRECTORY),
+            (".agents/skills/agent-fabric-new-product", "skills/new-product"),
         )
     ]
 

@@ -70,6 +70,7 @@ class ProjectInstallTest(unittest.TestCase):
                 self.assertFalse((release / name).exists())
             self.assertTrue((release / "scripts/secret-entry.sh").is_file())
             self.assertTrue((release / "skills/project-entry/SKILL.md").is_file())
+            self.assertTrue((release / "skills/new-product/SKILL.md").is_file())
             self.assertTrue((release / "adapters/codex-project/agents/socrates.toml").is_file())
             with sqlite3.connect(target / ".agent-fabric/memory.db") as connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], MEMORY_SCHEMA_VERSION)

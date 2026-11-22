@@ -64,7 +64,7 @@ class CodexProjectTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first["files"], [codex_project.RECEIPT])
         self.assertEqual(first["transient_paths"], [codex_project.PENDING])
-        self.assertEqual(len(first["links"]), 2)
+        self.assertEqual(len(first["links"]), 3)
         self.assertEqual(first["desktop_discovery"], "unverified")
         self.assertEqual(first["claim_restore"], "unverified")
         self.assertFalse((self.project / ".codex").exists())
@@ -121,7 +121,7 @@ class CodexProjectTest(unittest.TestCase):
         ):
             result = self.apply_adapter()
         self.assertEqual(result["file_installation"], "installed")
-        self.assertEqual(result["links_observed"], 2)
+        self.assertEqual(result["links_observed"], 3)
         for name in codex_project.PERSONAS.values():
             profile = self.project / ".codex/agents" / f"{name}.toml"
             self.assertFalse(profile.is_symlink())

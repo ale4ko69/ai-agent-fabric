@@ -84,6 +84,93 @@ Kepler independently challenges it. Kepler cannot widen the spec: a new concern 
 deferred or explicitly accepted by the human owner as a spec amendment, after which
 Plato revises the plan and Kepler gives a fresh verdict.
 
+## New Product (opt-in)
+
+The explicit `new-product` skill is a discovery mode for ordinary planned work, not
+the default entry, a new role, or a second lifecycle. **V1 delivery supports only the
+Codex plugin surface and its separate-chat handoff.** It does not claim end-to-end
+Copilot or Claude New Product support; their ordinary Fabric plumbing is unchanged.
+On an unsupported surface, stop without initialization, installation, or a substitute
+handoff. Project-only installation remains a separate future design, not this feature.
+
+First the owner chooses an existing
+empty local folder. Root detects host/Bash and client, presents canonical
+`project init --client codex --require-empty --preview`, and obtains explicit approval before applying
+the local binding/profile/config/overlay/memory writes. No source scaffold, Git setup,
+remote repository, dependency installation, or global reinstall belongs to this entry.
+
+After initialization, Root separately previews
+`start --type planned --new-product`, obtains confirmation, and applies the ordinary
+start. It creates the normal task package under the configured root
+(`docs/specs/active/<task-id>/` by default) and requests a separate Socrates chat.
+Root forwards the entire request, including the saved mode and next open question,
+and stops. Root remains entry/recovery only; real brainstorming starts only in the
+separate chat after its durable claim.
+
+Socrates collaboratively explores users, problems, outcomes, constraints, alternatives,
+and trade-offs. It asks focused questions, distinguishes assumptions from facts, and
+uses Aristotle selectively for bounded research rather than launching a mandatory
+research phase for every idea. An optional question-led prototype must have an agreed
+learning question, scope, and success signal; executable implementation still needs
+the normal reviewed plan and owner approval.
+
+Before normal planning, Socrates fills task-local `mvp-scope.json` with the agreed
+scope, exclusions/non-goals, observable acceptance criteria, and constraints.
+It is the authoritative MVP contract; `spec.md` remains editable explanation including
+user value, rationale, and unresolved risks. The [exact JSON shape](cli.md#explicit-new-product-discovery)
+has no undeclared fields or duplicate keys.
+`socrates approve-mvp --preview` reads that structured scope and its canonical digest;
+spec digest/revision remain informational. Socrates presents the contract and relevant
+risks, keeping discovery open until the owner's explicit decision. If the owner already
+explicitly approved this exact contract in chat, record that decision instead of asking
+again. A suggestion or historical proposal is not a decision on changed scope.
+Claimed Socrates records the agent-attested decision with `--reviewed-scope-sha256`,
+the actual current thread id, a chat reference, and an existing decision artifact inside
+this task's `evidence/`. This uses existing memory records and the authorization trust
+model, not a new database schema or independent proof of owner identity.
+
+The runtime rejects closing or skipping discovery, further lifecycle transitions, and
+planning delegation submission/dispatch without a current MVP approval. The record
+binds the task id, authoritative scope path, structured contract/canonical digest, and
+exact decision-artifact digest. Formatting the JSON, editing explanatory prose, or
+incrementing spec revision does not revoke MVP approval. Changing the contract requires
+an explicit owner decision covering the change; reuse an already explicit matching
+decision without a duplicate question. Changed decision evidence still requires
+re-attestation, never silent acceptance. Legacy approvals bound only to full spec text
+fail closed: populate the structured contract from the agreed MVP and explicitly attest
+the prior decision only if it matches. No automatic conversion or database migration.
+A prose session-state note alone cannot unlock planning. A task-start audit marker
+preserves the opt-in even if its markdown marker is subsequently removed. This gate
+authorizes planning only, not implementation; ordinary reviewed-plan approvals still
+bind their full artifacts/revisions and are not weakened by this MVP rule.
+
+Fold intersecting owner instructions into the same task and update the contract only
+when scope, non-goals, acceptance, or constraints actually change. Preserve completed
+progress, findings, and current work; continue unaffected permitted steps rather than
+restarting discovery or opening a duplicate task. Reconcile only the impacted work
+with the explicit owner decision and ordinary gates.
+
+At enqueue, a New Product Plato (`plan`) request must reference this task's authoritative
+MVP scope path and is internally pinned to the approved digest. At dispatch, stale
+or legacy unpinned queued requests fail closed even after a new approval. Socrates
+replaces them with a fresh request/idempotency key using the current approval, without
+asking the owner again. Pending-request/restore views retain obsolete rows with an
+actionable read-only `dispatch_guard` diagnostic, not another SQLite status or a deleted
+task. Unaffected requests keep their public shape; already-running Plato is outside this
+queue case and is not reset or cancelled.
+
+Only Socrates persists discovery decisions and episodic memory. Aristotle and other
+specialists use the existing delegation/outbox protocol. The existing
+`session-state.md` stores `Mode: new-product`, progress, alternatives, the MVP owner
+decision, and one `## Next open question` section. Socrates updates it after meaningful
+answers; restore returns the saved question and state reference without writing or
+restarting discovery. The saved chat, pending results, and ordinary checklist remain
+authoritative. No new memory store or schema is introduced.
+
+After MVP approval, all ordinary planning, Kepler review, reviewed-package owner
+approval, implementation, review, authorized validation, and delivery gates remain.
+Ordinary start/restore outputs and workflow are unchanged unless this mode was chosen.
+
 ## Execution and review
 
 Heracles implements only the approved scope. After a state-changing action, the
