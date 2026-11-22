@@ -27,3 +27,7 @@ Metis has read and search capabilities. Socrates is responsible for invoking the
 controlled apply action after reviewing the candidate and confirming task authority;
 the command checks for a claimed lifecycle but does not authenticate the operating
 system process that invokes it.
+
+For a one-off Codex request outside Fabric, report analysis in chat when the
+project enables maintenance. Controlled apply requires an approved Fabric task
+and its claimed Socrates chat.

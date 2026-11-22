@@ -48,7 +48,7 @@ python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project co
 python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-status <target> --json
 ```
 
-The adapter preview lists newly created directories, nine relative native `links`,
+The adapter preview lists newly created directories, two relative native directory `links`,
 its local ownership `files`, and the transient pending ownership path. It writes
 nothing and does not probe symlink creation or launch Codex. Apply rechecks that
 separate digest and the intact pinned runtime before its first write.

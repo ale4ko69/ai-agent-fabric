@@ -268,8 +268,8 @@ After runtime installation, `project codex-install` has its own read-only previe
 explicit digest-bound apply. The scoped launcher creates relative native symlinks:
 
 ```text
-.codex/agents/<persona>.toml
-  -> ../../.agent-fabric/runtime/releases/<version>/adapters/codex-project/agents/<persona>.toml
+.codex/agents
+  -> ../.agent-fabric/runtime/releases/<version>/adapters/codex-project/agents
 .agents/skills/agent-fabric-project
   -> ../../.agent-fabric/runtime/releases/<version>/skills/project-entry
 .agent-fabric/codex-project-installation.json

@@ -64,7 +64,7 @@ class CodexProjectTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first["files"], [codex_project.RECEIPT])
         self.assertEqual(first["transient_paths"], [codex_project.PENDING])
-        self.assertEqual(len(first["links"]), 9)
+        self.assertEqual(len(first["links"]), 2)
         self.assertEqual(first["desktop_discovery"], "unverified")
         self.assertEqual(first["claim_restore"], "unverified")
         self.assertFalse((self.project / ".codex").exists())
@@ -121,7 +121,14 @@ class CodexProjectTest(unittest.TestCase):
         ):
             result = self.apply_adapter()
         self.assertEqual(result["file_installation"], "installed")
-        self.assertEqual(result["links_observed"], 9)
+        self.assertEqual(result["links_observed"], 2)
+        for name in codex_project.PERSONAS.values():
+            profile = self.project / ".codex/agents" / f"{name}.toml"
+            self.assertFalse(profile.is_symlink())
+            self.assertEqual(
+                profile.read_bytes(),
+                (self.release / codex_project.AGENT_DIRECTORY / profile.name).read_bytes(),
+            )
         self.assertEqual(result["desktop_discovery"], "unverified")
         self.assertEqual(result["claim_restore"], "unverified")
         for link in result["links"]:
@@ -205,17 +212,19 @@ class CodexProjectTest(unittest.TestCase):
                 codex_project.install_codex_project(self.project, expected_preview_sha256=preview["preview_sha256"])
         self.assertTrue((self.project / codex_project.PENDING).is_file())
         self.assertFalse((self.project / codex_project.RECEIPT).exists())
-        self.assertEqual(list((self.project / ".codex/agents").iterdir()), [])
+        self.assertFalse(os.path.lexists(self.project / ".codex/agents"))
         self.assertEqual(codex_project.codex_project_status(self.project)["file_installation"], "incomplete")
         with self.assertRaises(FileExistsError):
             codex_project.codex_project_preview(self.project)
 
     def test_unobservable_or_replaced_links_never_claim_app_discovery(self) -> None:
         self.apply_adapter()
-        link = self.project / ".codex/agents/socrates.toml"
-        contents = link.read_bytes()
-        link.unlink()
-        link.write_bytes(contents)
+        link = self.project / ".codex/agents"
+        if os.name == "nt":
+            link.rmdir()
+        else:
+            link.unlink()
+        link.mkdir()
         status = codex_project.codex_project_status(self.project)
         self.assertEqual(status["file_installation"], "invalid")
         self.assertIn("not a copy or junction", status["error"])
@@ -235,7 +244,7 @@ class CodexProjectTest(unittest.TestCase):
     def test_failed_link_observation_during_apply_reports_incomplete(self) -> None:
         preview = codex_project.codex_project_preview(self.project)
         with mock.patch.object(codex_project.os, "readlink", return_value="../../outside"):
-            with self.assertRaisesRegex(OSError, "incomplete at .codex/agents/socrates.toml"):
+            with self.assertRaisesRegex(OSError, "incomplete at .codex/agents"):
                 codex_project.install_codex_project(self.project, expected_preview_sha256=preview["preview_sha256"])
         self.assertEqual(codex_project.codex_project_status(self.project)["file_installation"], "incomplete")
 

@@ -24,21 +24,18 @@
     "claim_restore": {"const": "unverified"},
     "directories": {
       "type": "array",
-      "minItems": 2,
-      "maxItems": 4,
+      "minItems": 1,
+      "maxItems": 3,
       "uniqueItems": true,
-      "items": {"enum": [".codex", ".codex/agents", ".agents", ".agents/skills"]},
-      "allOf": [
-        {"contains": {"const": ".codex"}},
-        {"contains": {"const": ".codex/agents"}}
-      ]
+      "items": {"enum": [".codex", ".agents", ".agents/skills"]},
+      "contains": {"const": ".codex"}
     },
     "links": {
       "type": "array",
-      "minItems": 9,
-      "maxItems": 9,
+      "minItems": 2,
+      "maxItems": 2,
       "uniqueItems": true,
-      "description": "Runtime additionally verifies exact persona order, release identity, source/target pairing and native symlink observations.",
+      "description": "Runtime additionally verifies release identity, exact source/target pairing and native symlink observations.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -46,13 +43,13 @@
         "properties": {
           "path": {
             "type": "string",
-            "pattern": "^(?:\\.codex/agents/(?:socrates|aristotle|plato|kepler|heracles|athena|euclid|metis)\\.toml|\\.agents/skills/agent-fabric-project)(?![\\s\\S])"
+            "enum": [".codex/agents", ".agents/skills/agent-fabric-project"]
           },
           "target": {
             "type": "string",
-            "pattern": "^(?:\\.\\./){2}\\.agent-fabric/runtime/releases/(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/))[0-9A-Za-z](?:[0-9A-Za-z._+-]*[0-9A-Za-z_+-])?/(?:adapters/codex-project/agents/(?:socrates|aristotle|plato|kepler|heracles|athena|euclid|metis)\\.toml|skills/project-entry)(?![\\s\\S])"
+            "pattern": "^(?:\\.\\./){1,2}\\.agent-fabric/runtime/releases/(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/))[0-9A-Za-z](?:[0-9A-Za-z._+-]*[0-9A-Za-z_+-])?/(?:adapters/codex-project/agents|skills/project-entry)(?![\\s\\S])"
           },
-          "kind": {"enum": ["file", "directory"]}
+          "kind": {"const": "directory"}
         }
       }
     }

@@ -28,11 +28,11 @@ PERSONAS = {
     "validation": "euclid", "maintenance": "metis",
 }
 COMMON_BOUNDARY = (
-    "Use only the project's pinned local Fabric launcher: "
+    "For Fabric tasks, use only the project's pinned local launcher: "
     "python -I -S -B .agent-fabric/runtime/bin/ai-agent-fabric.py. "
     "Run from the verified project root and inspect project context before task work. "
     "These persona instructions do not grant tools, sandbox permissions, model selection, "
-    "task ownership or approval. Root is entry/recovery only, not Socrates. "
+    "task ownership or approval. For Fabric tasks, Root handles entry and recovery only. "
     "Only a separate, real task chat may become Socrates after claiming its durable task id "
     "with that chat's real Desktop thread ID. Native subagents are not Socrates chats. "
     "Never invent a thread ID, invoke an undocumented Desktop API, or substitute Root. "
@@ -55,14 +55,20 @@ def render_project_agents(profiles: dict[str, Any], documents: dict[str, bytes])
         if persona is None or role in seen or profile["persona"].lower() != persona:
             raise ValueError("Codex project persona identities do not match the canonical registry")
         seen.add(role)
-        document = documents[persona].decode("utf-8")
+        document = documents[persona].decode("utf-8").replace("\r\n", "\n")
         boundary = (
             "If invoked as a native subagent, do not claim a task or write durable memory; "
             "return a needs-real-socrates-chat result to Root. In a real separate task chat, "
             "claim only after verifying its actual thread identity and owner-authorized transfer.\n"
             if role == "orchestrator" else
-            "Accept bounded delegation only from the claimed Socrates chat. Return structured "
-            "results and artifact references; do not claim tasks or write durable task memory.\n"
+            "For Fabric tasks, accept bounded delegation only from the claimed Socrates chat. "
+            "Return results and artifact references under the Fabric delegation contract. "
+            "Do not claim tasks or write durable task memory. "
+            "For an explicit one-off delegation from Root outside Fabric, perform the bounded "
+            "assignment within your role and project rules and return the result in chat. "
+            "Do not invoke the Fabric launcher, create or claim a Fabric task, write to Fabric "
+            "storage, or submit an outbox result. Work that advances an existing Fabric task "
+            "requires delegation from that task's claimed Socrates chat.\n"
         )
         instructions = (
             COMMON_BOUNDARY + boundary + "\nCanonical machine profile:\n"
@@ -82,17 +88,13 @@ def render_project_agents(profiles: dict[str, Any], documents: dict[str, bytes])
 def _links(version: str) -> list[dict[str, str]]:
     """Единственный список разрешённых относительных client links, без config/instruction writes."""
     prefix = f".agent-fabric/runtime/releases/{version}"
-    links = []
-    for persona in PERSONAS.values():
-        path = f".codex/agents/{persona}.toml"
-        target = f"{prefix}/{AGENT_DIRECTORY}/{persona}.toml"
-        links.append({"path": path, "target": posixpath.relpath(target, posixpath.dirname(path)), "kind": "file"})
-    path = ".agents/skills/agent-fabric-project"
-    links.append({
-        "path": path, "target": posixpath.relpath(f"{prefix}/{SKILL_DIRECTORY}", posixpath.dirname(path)),
-        "kind": "directory",
-    })
-    return links
+    return [
+        {"path": path, "target": posixpath.relpath(f"{prefix}/{target}", posixpath.dirname(path)), "kind": "directory"}
+        for path, target in (
+            (".codex/agents", AGENT_DIRECTORY),
+            (".agents/skills/agent-fabric-project", SKILL_DIRECTORY),
+        )
+    ]
 
 
 def _runtime(target: str | Path) -> tuple[Path, dict[str, Any], str]:
@@ -144,7 +146,7 @@ def _plan(target: str | Path) -> dict[str, Any]:
         _case_conflict(candidate.parent, candidate.name)
         if os.path.lexists(candidate):
             raise FileExistsError(f"Existing client state will not be overwritten or merged: {candidate}")
-    directories = [".codex", ".codex/agents"]
+    directories = [".codex"]
     existing: dict[str, Any] = {}
     for relative in (".", ".agents", ".agents/skills"):
         candidate = project / relative
@@ -215,10 +217,10 @@ def validate_codex_project_installation(record: dict[str, Any]) -> None:
     if not isinstance(record["project_root"], str) or not Path(record["project_root"]).is_absolute():
         raise ValueError("Codex project root must be absolute")
     directories = record["directories"]
-    allowed = {".codex", ".codex/agents", ".agents", ".agents/skills"}
+    allowed = {".codex", ".agents", ".agents/skills"}
     if not isinstance(directories, list) or any(not isinstance(item, str) for item in directories):
         raise ValueError("Invalid Codex project directory inventory")
-    if len(set(directories)) != len(directories) or not {".codex", ".codex/agents"}.issubset(directories) or not set(directories).issubset(allowed):
+    if len(set(directories)) != len(directories) or ".codex" not in directories or not set(directories).issubset(allowed):
         raise ValueError("Codex project directory inventory escapes its scope")
     if record["links"] != _links(version):
         raise ValueError("Codex project link inventory must match the pinned persona and entry links")
@@ -245,7 +247,8 @@ def install_codex_project(target: str | Path, *, expected_preview_sha256: str) -
         for link in plan["links"]:
             active = link["path"]
             _check_path((project / active).parent, owned=True)
-            os.symlink(link["target"], project / active, target_is_directory=link["kind"] == "directory")
+            native_target = link["target"].replace("/", os.sep)
+            os.symlink(native_target, project / active, target_is_directory=link["kind"] == "directory")
             _observe_link(project, link)
         active = RECEIPT
         _write_new(project, RECEIPT, _json_bytes(record))
@@ -284,13 +287,13 @@ def codex_project_status(target: str | Path) -> dict[str, Any]:
         for relative in record["directories"]:
             if not stat.S_ISDIR(_check_path(project / relative, owned=True).st_mode):
                 raise ValueError(f"Codex project directory ownership conflict: {relative}")
+        for link in record["links"]:
+            _observe_link(project, link)
         if {path.name for path in (project / ".codex").iterdir()} != {"agents"} or (
             {path.name for path in (project / ".codex/agents").iterdir()}
             != {f"{persona}.toml" for persona in PERSONAS.values()}
         ):
             raise ValueError("Unmanaged config, instructions or agents appeared in owned .codex scope")
-        for link in record["links"]:
-            _observe_link(project, link)
         report.update({"file_installation": "installed", "ownership": RECEIPT, "links_observed": len(record["links"])})
     except (OSError, ValueError) as error:
         report.update({"file_installation": "invalid", "error": str(error)})

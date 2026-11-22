@@ -52,8 +52,8 @@ python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py pr
 python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-status /path/to/project --json
 ```
 
-This installs eight relative persona symlinks under `.codex/agents` and one governed
-entry under `.agents/skills`, with local ownership metadata. It refuses **any existing
+This installs a relative directory symlink at `.codex/agents` to the eight persona
+TOML files and a governed entry under `.agents/skills`, with local ownership metadata. It refuses **any existing
 `.codex`**, never touches global client configuration, and never falls back to copying,
 junctions or elevation. Existing unrelated project skills are preserved.
 

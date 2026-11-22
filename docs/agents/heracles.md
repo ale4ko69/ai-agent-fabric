@@ -22,3 +22,7 @@ feature, even when it appears adjacent to a portable mechanism in an inventory.
 **Inputs:** approved plan, task state, project profile, declared capabilities.
 **Output:** changed-file evidence, structured result, unresolved risks.
 **Model policy:** standard capability, balanced cost.
+
+For a one-off Codex request outside Fabric, implement only the change explicitly
+authorized by the user through Root and report changes and verification in chat.
+The Fabric approval package and outbox apply to Fabric tasks.
