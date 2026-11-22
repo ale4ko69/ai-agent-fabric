@@ -4,6 +4,37 @@ AI Agent Fabric is model-client neutral. The versioned shared Fabric defines rol
 memory, contracts, and safety behavior; client adapters render one explicit global
 bootstrap for the selected client. A project binding supplies its local overlay.
 
+The table below describes user-level adapter mode. Explicit `project install
+--client codex` installs a **runtime only**, with `client_activation: none` and no
+adapter manifest in its context (`adapter_manifest: null`). Dormant persona TOMLs and
+the project-entry skill are prepared inside the pinned release, not activated in a
+client. It writes no user/global client configuration, native project instructions,
+hooks or Desktop plugin. It does not create/reopen a Socrates chat.
+
+A separate `project codex-install` preview/apply, available only through the scoped
+launcher, installs relative native symlinks for `socrates`, `aristotle`, `plato`,
+`kepler`, `heracles`, `athena`, `euclid` and `metis` under `.codex/agents`, plus
+`.agents/skills/agent-fabric-project`. The TOMLs contain `name`, `description` and
+`developer_instructions` from the pinned canonical profiles and their readable
+companions; they do not choose a model, elevate sandbox permissions or grant task
+authority. The Socrates persona explicitly refuses task claiming when invoked as a
+native subagent.
+
+Any existing `.codex` entry blocks installation, including an empty directory.
+Existing config, instructions or agents are never merged, rewritten or claimed.
+Other ordinary project skill directories may coexist, but the selected entry must be
+absent. No global config, copy, junction, plugin or elevation fallback is attempted.
+Inspect `project codex-status`: `file_installation` is separate from
+`desktop_discovery: unverified` and `claim_restore: unverified`. A broken/replaced link
+reports `invalid`; an interrupted install retains pending ownership for manual
+inspection. App visibility is not inferred from link existence.
+
+Root uses the entry only for routing and recovery. Transfer to Socrates is manual and
+requires a real separate Desktop chat and its actual thread ID. Missing identity or
+exact reopening means stop. Native subagent labels, synthetic IDs and undocumented
+Desktop API calls are not substitutes. See [pinned source evidence](client-adapter-evidence.md#project-local-codex-source-contract)
+and [next-machine validation](using-fabric.md#project-local-codex-next-machine-validation).
+
 | Client surface | Project marker | User-level bootstrap | Fabric project overlay |
 |---|---|---|---|
 | Codex local runtime | `.codex/` or `AGENTS.md` | `~/.codex/AGENTS.md` | `.agent-fabric/project-overlay.md`, read by the global bootstrap |

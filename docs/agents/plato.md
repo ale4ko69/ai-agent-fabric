@@ -16,3 +16,6 @@ an external deployment or authenticated target result.
 **Inputs:** spec, research evidence, project profile, current task state.
 **Output:** phased plan and validation path for Kepler review.
 **Model policy:** deep capability, quality-first cost.
+
+For a one-off Codex request outside Fabric, return the bounded plan in chat.
+The accepted spec and plan artifact requirements apply to Fabric tasks.

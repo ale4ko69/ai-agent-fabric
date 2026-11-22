@@ -8,6 +8,54 @@ If `start` or `restore` fails in Codex, Root stops project work. It may only rep
 the failure or run the explicit Fabric recovery path; it must not execute the task in
 place of the task-local Socrates lifecycle.
 
+## Project-local Codex next-machine validation
+
+The project-only path is **runtime installation, then a separate adapter
+preview/apply**. Use only its scoped Python launcher. It links `.codex/agents` to the eight persona TOML files
+and links `.agents/skills/agent-fabric-project`, not a Desktop plugin or
+global configuration. `project codex-status <project> --json` observes filesystem
+ownership; `file_installation: installed` does not mean the app discovered anything.
+Both `desktop_discovery` and `claim_restore` remain `unverified`.
+
+On the next computer, with a reviewed fresh runtime and explicit owner approval:
+
+1. Preview `project codex-install`, inspect all relative targets and the pinned
+   release, then apply its exact `--expected-preview-sha256`. Existing `.codex`
+   state blocks install, even if empty; never delete user state merely to make
+   installation succeed. Inspect it and agree on a separate target instead.
+2. Record the OS/filesystem, actual Desktop version, project root and trust state.
+   Run `project codex-status`. Native symlink failure is a concrete blocker; no
+   junction, copy, elevation or global-config workaround is silently authorized.
+3. Open/trust that exact project in Desktop using its real UI. Observe all eight
+   personas (`socrates`, `aristotle`, `plato`, `kepler`, `heracles`, `athena`, `euclid`,
+   `metis`) and the `agent-fabric-project` skill. Check the content/targets, not
+   merely names. If they are hidden or ignored, record which links the app cannot
+   observe, the build and any actual error; stop instead of claiming support.
+   Project/config-layer discovery in the pinned upstream code does not prove that
+   the installed Desktop build exposes the same surface.
+4. Invoke the governed project entry as Root. Preview a bounded throwaway task and
+   create it only after approval. Verify the task is awaiting its separate Socrates
+   chat and Root has not planned, implemented, delegated or claimed it.
+5. **Explicit/manual transfer:** the owner creates a real separate project chat or
+   reopens the exact previously bound one, then transfers the task id, pinned
+   context, Socrates companion and activation packet. Obtain that chat's real
+   Desktop thread ID from an actually available identity surface. Never use a
+   synthetic identifier, chat title, guessed URL, native agent id or undocumented
+   `create_thread`/reopen API. Only that separate chat runs `socrates claim`.
+6. If creation, real identity or exact reopening is unavailable, stop and leave the
+   task pending. Do not have Root claim on another chat's behalf. The existing claim
+   command checks durable binding consistency; it trusts the supplied identifier
+   and is **not independent Desktop identity attestation**.
+7. Where the real surface supports it, observe claim, a bounded evidenced step, chat
+   closure, and manual reopening of that exact bound chat. Restore using the local
+   launcher, verify the same thread binding and preserved checklist, and confirm a
+   different chat cannot rebind the task. Native specialist subagents are never
+   substitutes for this separate Socrates chat.
+
+Record live evidence separately for file installation, app discovery, and genuine
+claim/restore. Automated tests use fixture IDs and cannot supply that evidence.
+No automatic promotion of the adapter record to “Desktop verified” is implemented.
+
 ## The three states that must not be confused
 
 ```mermaid
@@ -125,6 +173,9 @@ collects evidence, and produces a proposal for Kepler and you. Nothing changes
 automatically.
 
 ## Hooks: what is automatic, and what is not
+
+This section describes the separate **user-level plugin mode**. The project-local
+Codex adapter above installs no plugin or lifecycle hook.
 
 The Fabric Codex plugin now includes one deliberately narrow, trusted `SessionStart`
 hook. Once the plugin version is installed and trusted in Codex, it finds a bound

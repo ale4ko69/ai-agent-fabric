@@ -19,9 +19,15 @@ from .socrates import diagnose
 from .entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, release_source_digest, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
 from .socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
+from .project_install import install_project, project_install_preview, restrict_runtime_command
+from .codex_project import codex_project_preview, codex_project_status, install_codex_project
 
 
-def main() -> None:
+def main(*, project_runtime: Path | None = None) -> None:
+    # Локальный launcher задаёт scope до разбора аргументов; обычный global CLI не меняется.
+    if project_runtime is not None:
+        import os
+        os.environ["AI_AGENT_FABRIC_HOME"] = str(project_runtime / ".agent-fabric/runtime")
     # Windows may inherit a legacy CP1252 console. JSON is always UTF-8.
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -307,6 +313,25 @@ def main() -> None:
     distribution_disable_codex_skills.add_argument("--home", type=Path, default=default_fabric_home())
     project = sub.add_parser("project", help="Initialize and manage project-owned Fabric overlays")
     project_sub = project.add_subparsers(dest="project_command", required=True)
+    project_install = project_sub.add_parser("install", help="Install an isolated project runtime without client activation")
+    project_install.add_argument("target")
+    project_install.add_argument("--source", required=True)
+    project_install.add_argument("--client", required=True, choices=("codex",))
+    project_install_mode = project_install.add_mutually_exclusive_group(required=True)
+    project_install_mode.add_argument("--preview", action="store_true")
+    project_install_mode.add_argument("--apply", action="store_true")
+    project_install.add_argument("--expected-preview-sha256")
+    project_install.add_argument("--json", action="store_true")
+    project_codex_install = project_sub.add_parser("codex-install", help="Preview or install project-local Codex links; Desktop support remains unverified")
+    project_codex_install.add_argument("target")
+    project_codex_mode = project_codex_install.add_mutually_exclusive_group(required=True)
+    project_codex_mode.add_argument("--preview", action="store_true")
+    project_codex_mode.add_argument("--apply", action="store_true")
+    project_codex_install.add_argument("--expected-preview-sha256")
+    project_codex_install.add_argument("--json", action="store_true")
+    project_codex_status = project_sub.add_parser("codex-status", help="Observe owned local Codex links without claiming app discovery")
+    project_codex_status.add_argument("target")
+    project_codex_status.add_argument("--json", action="store_true")
     project_status_command = project_sub.add_parser("status", help="Inspect Fabric state in a project without writing")
     project_status_command.add_argument("target", type=Path)
     project_status_command.add_argument("--home", type=Path, default=default_fabric_home())
@@ -327,6 +352,11 @@ def main() -> None:
     project_init.add_argument("--home", type=Path, default=default_fabric_home())
     project_init.add_argument("--preview", action="store_true")
     args = parser.parse_args()
+    if project_runtime is not None:
+        try:
+            restrict_runtime_command(args, project_runtime)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
     if args.command == "detect":
         environment = detect_environment().as_dict()
         print(json.dumps(environment) if args.json else environment)
@@ -611,6 +641,39 @@ def main() -> None:
     elif args.command == "distribution" and args.distribution_command == "disable-codex-skills":
         disable_codex_skills(args.home)
         print("Legacy direct Codex skill links removed.")
+    elif args.command == "project" and args.project_command in {"codex-install", "codex-status"}:
+        if project_runtime is None:
+            parser.error("Use the pinned project-local Python launcher for Codex project adapter commands")
+        try:
+            if args.project_command == "codex-status":
+                result = codex_project_status(args.target)
+            else:
+                if args.apply and not args.expected_preview_sha256:
+                    parser.error("--apply requires --expected-preview-sha256 from a reviewed adapter preview")
+                if args.preview and args.expected_preview_sha256 is not None:
+                    parser.error("--expected-preview-sha256 is valid only with --apply")
+                result = (
+                    install_codex_project(args.target, expected_preview_sha256=args.expected_preview_sha256)
+                    if args.apply else codex_project_preview(args.target)
+                )
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "project" and args.project_command == "install":
+        if not (sys.flags.isolated and sys.flags.no_site and sys.dont_write_bytecode):
+            parser.error("project install requires python -I -S -B scripts/run-fabric.py from trusted source")
+        if args.apply and not args.expected_preview_sha256:
+            parser.error("--apply requires --expected-preview-sha256 from a reviewed preview")
+        if args.preview and args.expected_preview_sha256 is not None:
+            parser.error("--expected-preview-sha256 is valid only with --apply")
+        try:
+            result = (
+                install_project(args.target, args.source, args.client, expected_preview_sha256=args.expected_preview_sha256)
+                if args.apply else project_install_preview(args.target, args.source, args.client)
+            )
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "project" and args.project_command == "init":
         paths = project_onboarding_preview(args.target, args.client, args.home, args.release) if args.preview else [onboard_project(args.target, args.client, args.home, args.release)]
         for path in paths:

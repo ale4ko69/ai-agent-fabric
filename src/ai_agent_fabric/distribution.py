@@ -497,7 +497,15 @@ def project_status(project_root: Path, fabric_home: Path | None = None) -> dict[
         profile_path = _project_relative_path(project, binding["profile"])
         overlay_path = _project_relative_path(project, binding["project_overlay"])
         report.update({"profile": profile_path.is_file(), "project_overlay": overlay_path.is_file()})
-        home = (fabric_home or default_fabric_home()).expanduser().resolve()
+        # Project-only ownership имеет приоритет; повреждённый local runtime не ищет global.
+        from .project_install import local_fabric_home
+        local_home = local_fabric_home(project)
+        home = local_home or (fabric_home or default_fabric_home()).expanduser().resolve()
+        if local_home is not None:
+            report.update({"installation_mode": "project-runtime", "client_activation": "none"})
+            # Filesystem adapter status не является свидетельством Desktop discovery или claim.
+            from .codex_project import codex_project_status
+            report["project_adapter"] = codex_project_status(project)
         installation = load_installation(home)
         report.update(
             {
@@ -513,7 +521,7 @@ def project_status(project_root: Path, fabric_home: Path | None = None) -> dict[
         load_capabilities(project)
         load_routing(project)
         load_config(project)
-    except (ValueError, FileNotFoundError) as error:
+    except (ValueError, OSError) as error:
         report.update({"status": "invalid", "error": str(error)})
         return report
     if report["pending_update"]:
@@ -545,7 +553,9 @@ def require_bound_project(
 def project_context(project_root: Path, fabric_home: Path | None = None) -> dict[str, Any]:
     """Return only the read-only contracts a selected client needs for a bound project."""
     project = project_root.resolve()
-    home = (fabric_home or default_fabric_home()).expanduser().resolve()
+    from .project_install import local_fabric_home
+    local_home = local_fabric_home(project)
+    home = local_home or (fabric_home or default_fabric_home()).expanduser().resolve()
     report = require_bound_project(project, home)
     binding = _load_project_binding(state_path(project, PROJECT_BINDING_FILE))
     release = release_path(home, binding["fabric_release"])
@@ -567,7 +577,7 @@ def project_context(project_root: Path, fabric_home: Path | None = None) -> dict
         "shared_contracts": {
             "agent_profiles": str(release / "core" / "agent-profiles.json"),
             "gates": str(release / "core" / "gates.json"),
-            "adapter_manifest": str(release / "adapters" / binding["client"] / "adapter-manifest.json"),
+            "adapter_manifest": None if local_home else str(release / "adapters" / binding["client"] / "adapter-manifest.json"),
         },
         "project_contracts": {
             "profile": str(profile),
@@ -578,6 +588,10 @@ def project_context(project_root: Path, fabric_home: Path | None = None) -> dict
         },
         "memory": "not exposed by client context",
         "status": report["status"],
+        **({
+            "installation_mode": "project-runtime", "client_activation": "none",
+            "project_adapter": report["project_adapter"],
+        } if local_home else {}),
     }
 
 

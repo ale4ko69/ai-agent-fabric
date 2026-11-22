@@ -16,3 +16,6 @@ permitted action separately. An unavailable target check remains unverified.
 **Inputs:** project validation profile, declared contract, changed-artifact evidence.
 **Output:** validation evidence, gaps, and a structured result.
 **Model policy:** standard capability, minimize cost.
+
+For a one-off Codex request outside Fabric, return validation evidence in chat
+when the project enables validation. Use the outbox for Fabric results.

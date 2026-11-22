@@ -1,4 +1,35 @@
-# Project onboarding from a global Fabric
+# Project onboarding
+
+## Project-only runtime
+
+No global Fabric or client adapter is required for this mode. From the selected,
+reviewed source checkout, use an existing target with no `.agent-fabric` entry:
+
+```bash
+python -I -S -B scripts/run-fabric.py project install /path/to/project --source . --client codex --preview --json
+python -I -S -B scripts/run-fabric.py project install /path/to/project --source . --client codex --apply --expected-preview-sha256 <preview_sha256> --json
+python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project context /path/to/project --json
+```
+
+Review the exact files, directories and possible SQLite sidecars in the preview.
+The digest covers source contents, target identity, selected mode/client and the
+write inventory. If anything changes, obtain a fresh preview rather than guessing
+a replacement digest. Preview never opens SQLite or creates state. Apply creates
+the current database schema only in a new target state tree; it does not migrate
+an existing project.
+
+The runtime, release registry, launcher, ownership, binding, configuration and memory
+all stay under `.agent-fabric`. No user-level client files, native repository
+instructions, plugin, hooks or role renderer are installed. Client activation is
+**none**, not Codex Desktop support or a Socrates handoff. Inspecting context through
+the explicit local launcher is the supported entry point.
+
+The local launcher cannot target another project, change home, install a release,
+enable a client or bootstrap host software. There is no global fallback. An existing
+or interrupted `.agent-fabric` tree must be inspected manually; this command will
+not merge, replace, repair or remove it. See [runtime ownership and boundaries](global-distribution.md#project-only-runtime).
+
+## Onboarding from a global Fabric
 
 This flow applies when a person creates a repository or clones one that has no AI Agent
 Fabric project binding. The global Fabric is already installed and the selected client
@@ -108,10 +139,12 @@ Afterward, every Fabric-managed write (memory initialization or repair, task-pac
 creation or archival, and harness trace append) first requires status `bound`. This
 prevents an older command path from creating project state without a release binding.
 
-## Existing repositories
+## Existing repositories in global mode
 
 For a cloned repository, initialization refuses to replace an existing binding or
 project overlay. An existing `.agent-fabric` directory alone does not cause a stop:
 the initializer preserves existing profile and config files and may initialize or
 migrate local memory. Inspect partial state and the preview before choosing whether to
 continue. Existing bound projects use the update/rollback lifecycle.
+This preservation behaviour belongs to `project init`, not `project install`, which
+refuses every pre-existing `.agent-fabric` entry.

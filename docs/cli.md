@@ -1,10 +1,71 @@
 # CLI operations
 
-Use the installed global `ai-agent-fabric` launcher for a bound project. Before a
+Use the installed global `ai-agent-fabric` launcher for a globally bound project. Before a
 release has been installed, the source wrapper is `python scripts/run-fabric.py`.
 Use `--help` after any command for its exact arguments. A path named `<project>` is
 the selected repository; `--home` selects a Fabric installation where supported.
 `--json` selects structured output and does not itself make an operation read-only.
+
+## Explicit project-only installation
+
+From the reviewed source checkout:
+
+```bash
+python -I -S -B scripts/run-fabric.py project install <target> --source <source> --client codex --preview --json
+python -I -S -B scripts/run-fabric.py project install <target> --source <source> --client codex --apply --expected-preview-sha256 <preview_sha256> --json
+```
+
+Invoke the selected source's own script; cross-source dispatch is refused. The target
+must already exist and have no `.agent-fabric` entry. Exactly one of `--preview` or
+`--apply` is required. Preview writes nothing and returns `preview_sha256`, the source
+digest, project-relative `files`, `directories`, and possible SQLite `transient_paths`.
+Apply requires the reviewed digest and refuses stale inputs before its first write.
+All installation writes stay under the target's `.agent-fabric`, without staging in
+system temp or consulting a global release.
+
+After installation, explicitly use:
+
+```bash
+python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project status <target> --json
+python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project context <target> --json
+```
+
+The launcher pins this target, local home and release; it cannot dispatch
+`distribution`, `bootstrap` or `project init/install`, or accept another target/home.
+Existing local workflow CLI operations remain available. Dormant project persona
+profiles are prepared in the release; no Desktop plugin or automatic Socrates handoff
+is supplied.
+`client_activation` is `none`. There is no project-only update, rollback or uninstall
+command; interrupted state blocks reinstall and requires manual inspection.
+
+### Separate project Codex adapter
+
+Use the **pinned local launcher**, not a source/global launcher:
+
+```bash
+python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-install <target> --preview --json
+python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-install <target> --apply --expected-preview-sha256 <adapter_preview_sha256> --json
+python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-status <target> --json
+```
+
+The adapter preview lists newly created directories, two relative native directory `links`,
+its local ownership `files`, and the transient pending ownership path. It writes
+nothing and does not probe symlink creation or launch Codex. Apply rechecks that
+separate digest and the intact pinned runtime before its first write.
+
+Any existing `.codex` blocks install, including empty directories, links and existing
+config/instructions/agents. An existing `.agents/skills` may retain unrelated skills,
+but the project-entry name must be free. No existing file is overwritten; no
+config merge, global client write, copy, junction or elevation fallback is available.
+If native links cannot be installed/observed, report the exact failing path and
+inspect the retained `.agent-fabric/codex-project-pending.json` manually. There is no
+automatic retry, repair or uninstall for partially owned state.
+
+`codex-status` distinguishes filesystem `file_installation` (`absent`, `unmanaged`,
+`incomplete`, `invalid`, `installed`) from the independent `desktop_discovery` and
+`claim_restore` fields, both always `unverified` in this version. Runtime `status`
+and `context` include this separate `project_adapter` report; adapter damage does not
+silently convert into a global installation or an active Desktop claim.
 
 ## Discovery and task routing
 

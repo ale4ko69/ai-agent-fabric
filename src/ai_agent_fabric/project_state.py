@@ -6,6 +6,16 @@ from pathlib import Path, PureWindowsPath
 STATE_DIRECTORY = ".agent-fabric"
 
 
+def _redirected(path: Path) -> bool:
+    """State не должен уходить через Windows reparse point так же, как через symlink."""
+    if path.is_symlink():
+        return True
+    try:
+        return bool(getattr(path.lstat(), "st_file_attributes", 0) & 0x400)
+    except FileNotFoundError:
+        return False
+
+
 def project_root(project_root: Path) -> Path:
     root = project_root.resolve()
     if not root.is_dir():
@@ -19,7 +29,7 @@ def state_directory(project_root: Path, *, create: bool = False) -> Path:
     if not root.is_dir():
         raise ValueError(f"Target project does not exist: {root}")
     directory = root / STATE_DIRECTORY
-    if directory.is_symlink():
+    if _redirected(directory):
         raise ValueError(f"{STATE_DIRECTORY} must not be a symbolic link")
     if directory.exists() and not directory.is_dir():
         raise ValueError(f"{STATE_DIRECTORY} must be a directory")
@@ -45,7 +55,7 @@ def state_path(project_root: Path, relative: str, *, create_parents: bool = Fals
     current = directory
     for component in relative_path.parts[:-1]:
         current = current / component
-        if current.is_symlink():
+        if _redirected(current):
             raise ValueError(f"Fabric state directory must not be a symbolic link: {relative}")
         if current.exists():
             if not current.is_dir():
@@ -55,7 +65,7 @@ def state_path(project_root: Path, relative: str, *, create_parents: bool = Fals
         else:
             break
     candidate = directory / relative_path
-    if candidate.is_symlink():
+    if _redirected(candidate):
         raise ValueError(f"Fabric state file must not be a symbolic link: {relative}")
     resolved_parent = candidate.parent.resolve()
     resolved_directory = directory.resolve()
