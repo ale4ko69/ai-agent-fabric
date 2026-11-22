@@ -92,6 +92,11 @@ def main(*, project_runtime: Path | None = None) -> None:
     memory_pending_results.add_argument("--session", required=True)
     memory_pending_results.add_argument("--home", type=Path, default=default_fabric_home())
     memory_pending_results.add_argument("--json", action="store_true")
+    memory_submit_result = memory_sub.add_parser("submit-result", help="Enqueue a typed specialist result for a dispatched request")
+    memory_submit_result.add_argument("target", type=Path)
+    memory_submit_result.add_argument("--result", required=True, help="JSON result envelope")
+    memory_submit_result.add_argument("--home", type=Path, default=default_fabric_home())
+    memory_submit_result.add_argument("--json", action="store_true")
     memory_restore = memory_sub.add_parser("restore", help="Read one project-local memory session")
     memory_restore.add_argument("target", type=Path)
     memory_restore.add_argument("--session", required=True)
@@ -125,6 +130,18 @@ def main(*, project_runtime: Path | None = None) -> None:
     socrates_claim.add_argument("--thread-id", required=True)
     socrates_claim.add_argument("--home", type=Path, default=default_fabric_home())
     socrates_claim.add_argument("--json", action="store_true")
+    for command, help_text, argument in (
+        ("submit-request", "Queue a typed delegation request", "--request"),
+        ("dispatch-request", "Mark a queued delegation as dispatched", "--key"),
+        ("acknowledge-result", "Persist a result from the specialist outbox", "--key"),
+    ):
+        delegation = socrates_sub.add_parser(command, help=help_text)
+        delegation.add_argument("target", type=Path)
+        delegation.add_argument("--session", required=True)
+        delegation.add_argument("--thread-id", required=True)
+        delegation.add_argument(argument, required=True)
+        delegation.add_argument("--home", type=Path, default=default_fabric_home())
+        delegation.add_argument("--json", action="store_true")
     socrates_mvp = socrates_sub.add_parser("approve-mvp", help="Preview or attest an explicit MVP owner decision before New Product planning")
     socrates_mvp.add_argument("target", type=Path)
     socrates_mvp.add_argument("--session", required=True)
@@ -418,6 +435,10 @@ def main(*, project_runtime: Path | None = None) -> None:
         require_bound_project(args.target, args.home)
         items = pending_results(args.target.resolve(), args.session)
         print(json.dumps(items, ensure_ascii=False, indent=2) if args.json else items)
+    elif args.command == "memory" and args.memory_command == "submit-result":
+        require_bound_project(args.target, args.home)
+        result = {"submitted": submit_result(args.target.resolve(), json.loads(args.result))}
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "memory" and args.memory_command == "restore":
         require_bound_project(args.target, args.home)
         snapshot = restore_memory(args.target.resolve(), args.session)
@@ -443,6 +464,23 @@ def main(*, project_runtime: Path | None = None) -> None:
         require_bound_project(args.target, args.home)
         result = claim_socrates_chat(args.target.resolve(), args.session, args.thread_id)
         flush_guard_traces(args.target)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command in {"submit-request", "dispatch-request", "acknowledge-result"}:
+        require_bound_project(args.target, args.home)
+        project = args.target.resolve()
+        snapshot = restore_memory(project, args.session)
+        chat = snapshot["socrates_chat"] or {}
+        if chat.get("status") != "claimed" or chat.get("thread_id") != args.thread_id:
+            raise PermissionError("Delegation management requires this session's claimed Socrates chat")
+        if args.socrates_command == "submit-request":
+            request = json.loads(args.request)
+            if not isinstance(request, dict) or request.get("session_id") != args.session:
+                raise ValueError("request does not belong to this Socrates session")
+            result = {"submitted": submit_request(project, request)}
+        elif args.socrates_command == "dispatch-request":
+            result = {"dispatched": mark_request_dispatched(project, args.key, session_id=args.session)}
+        else:
+            result = {"acknowledged": acknowledge_result(project, args.key, session_id=args.session)}
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "socrates" and args.socrates_command == "approve-mvp":
         require_bound_project(args.target, args.home)

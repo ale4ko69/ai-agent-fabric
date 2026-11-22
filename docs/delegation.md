@@ -36,6 +36,11 @@ references to artifacts, findings, and decisions. A specialist may submit it to 
 local outbox, but only Socrates can acknowledge it into the memory record. Both
 envelopes reject secret-like keys and common credential formats before persistence.
 
+Use the pinned launcher to run `memory submit-result` for a specialist response.
+Socrates uses `socrates submit-request`, `socrates dispatch-request` and
+`socrates acknowledge-result` with the task session and its claimed thread ID.
+See [CLI operations](cli.md#memory-guards-and-harness).
+
 Every agent authorized to edit files inspects their current state before an edit and
 preserves the owner's and other agents' changes. When the intended edit conflicts with
 the current file, stop on that file, report the conflict and agree on its resolution;
