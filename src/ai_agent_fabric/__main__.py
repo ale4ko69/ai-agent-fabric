@@ -11,8 +11,8 @@ from .capabilities import load_capabilities, unmet_requirements
 from .bootstrap import bash_install_plan, install_bash
 from .installer import load_project_profile, resolve_project_command
 from .environment import detect_environment
-from .memory import acknowledge_result, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
-from .task_specs import approve_planned_task, approval_preview, archive_task, attest_chat_approval, create_task, implementation_readiness, validate_task
+from .memory import acknowledge_result, attest_new_product_mvp_approval, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, pending_results, quarantined_results, record, restore as restore_memory, start_session, submit_request, submit_result
+from .task_specs import approve_planned_task, approval_preview, archive_task, attest_chat_approval, create_task, implementation_readiness, new_product_mvp_preview, require_new_product_client, validate_task
 from .harness import close_retrospective, flush_guard_traces, health_report, record_checkpoint, resume_snapshot, retrospective_input
 from .maintenance import apply_candidate, candidate_digest, inspect_operation, preview_candidate, parse_candidate, _safe_path
 from .socrates import diagnose
@@ -57,6 +57,7 @@ def main(*, project_runtime: Path | None = None) -> None:
     start.add_argument("--title", required=True)
     start.add_argument("--type", dest="work_class", required=True, choices=("small-bug", "planned"))
     start.add_argument("--id")
+    start.add_argument("--new-product", action="store_true", help="Opt into New Product discovery; requires --type planned and a Codex binding")
     start.add_argument("--home", type=Path, default=default_fabric_home())
     start.add_argument("--apply", action="store_true", help="Create the previewed package; omitted by default")
     start.add_argument("--json", action="store_true")
@@ -124,6 +125,16 @@ def main(*, project_runtime: Path | None = None) -> None:
     socrates_claim.add_argument("--thread-id", required=True)
     socrates_claim.add_argument("--home", type=Path, default=default_fabric_home())
     socrates_claim.add_argument("--json", action="store_true")
+    socrates_mvp = socrates_sub.add_parser("approve-mvp", help="Preview or attest an explicit MVP owner decision before New Product planning")
+    socrates_mvp.add_argument("target", type=Path)
+    socrates_mvp.add_argument("--session", required=True)
+    socrates_mvp.add_argument("--preview", action="store_true", help="Read the authoritative structured MVP scope and canonical digest without recording approval")
+    socrates_mvp.add_argument("--thread-id", help="Required for approval writes; must match this task's claimed Socrates thread id")
+    socrates_mvp.add_argument("--reviewed-scope-sha256", help="Exact canonical scope_sha256 from --preview; spec metadata is informational only")
+    socrates_mvp.add_argument("--chat-reference", help="Source of the explicit owner decision; agent-attested, not authenticated identity")
+    socrates_mvp.add_argument("--artifact", help="Existing decision evidence inside this task's evidence directory")
+    socrates_mvp.add_argument("--home", type=Path, default=default_fabric_home())
+    socrates_mvp.add_argument("--json", action="store_true")
     socrates_diagnose = socrates_sub.add_parser("diagnose", help="Read the task state, stop reason and recommended next action", description="Read a bound project's durable task and Guard state. It does not retry, resolve or change anything.", epilog="Example: ai-agent-fabric socrates diagnose /path/to/project --session my-task --json. Follow the returned recommended action.")
     socrates_diagnose.add_argument("target", type=Path)
     socrates_diagnose.add_argument("--session", required=True)
@@ -351,6 +362,7 @@ def main(*, project_runtime: Path | None = None) -> None:
     project_init.add_argument("--release")
     project_init.add_argument("--home", type=Path, default=default_fabric_home())
     project_init.add_argument("--preview", action="store_true")
+    project_init.add_argument("--require-empty", action="store_true", help="Require an existing empty local folder before preview or binding")
     args = parser.parse_args()
     if project_runtime is not None:
         try:
@@ -373,9 +385,11 @@ def main(*, project_runtime: Path | None = None) -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "start":
         require_bound_project(args.target, args.home)
-        result = start_preview(args.target, args.title, args.work_class, args.id)
+        if args.new_product:
+            require_new_product_client(args.target)
+        result = start_preview(args.target, args.title, args.work_class, args.id, new_product=args.new_product)
         if args.apply:
-            result["created"] = start_task(args.target, args.title, args.work_class, args.id)
+            result["created"] = start_task(args.target, args.title, args.work_class, args.id, new_product=args.new_product)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "restore":
         require_bound_project(args.target, args.home)
@@ -429,6 +443,18 @@ def main(*, project_runtime: Path | None = None) -> None:
         require_bound_project(args.target, args.home)
         result = claim_socrates_chat(args.target.resolve(), args.session, args.thread_id)
         flush_guard_traces(args.target)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "socrates" and args.socrates_command == "approve-mvp":
+        require_bound_project(args.target, args.home)
+        if args.preview:
+            result = new_product_mvp_preview(args.target, args.session)
+        else:
+            if not all((args.thread_id, args.reviewed_scope_sha256, args.chat_reference, args.artifact)):
+                parser.error("approve-mvp requires --thread-id, --reviewed-scope-sha256, --chat-reference and --artifact; inspect --preview first")
+            result = attest_new_product_mvp_approval(
+                args.target.resolve(), args.session, args.reviewed_scope_sha256,
+                args.chat_reference, args.artifact, thread_id=args.thread_id,
+            )
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "socrates" and args.socrates_command == "diagnose":
         require_bound_project(args.target, args.home)
@@ -675,7 +701,7 @@ def main(*, project_runtime: Path | None = None) -> None:
             parser.error(str(error))
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
     elif args.command == "project" and args.project_command == "init":
-        paths = project_onboarding_preview(args.target, args.client, args.home, args.release) if args.preview else [onboard_project(args.target, args.client, args.home, args.release)]
+        paths = project_onboarding_preview(args.target, args.client, args.home, args.release, require_empty=args.require_empty) if args.preview else [onboard_project(args.target, args.client, args.home, args.release, require_empty=args.require_empty)]
         for path in paths:
             print(path)
     elif args.command == "project" and args.project_command == "context":

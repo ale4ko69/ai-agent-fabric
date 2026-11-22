@@ -12,7 +12,7 @@ place of the task-local Socrates lifecycle.
 
 The project-only path is **runtime installation, then a separate adapter
 preview/apply**. Use only its scoped Python launcher. It links `.codex/agents` to the eight persona TOML files
-and links `.agents/skills/agent-fabric-project`, not a Desktop plugin or
+and links the project entry and New Product skills under `.agents/skills`, not a Desktop plugin or
 global configuration. `project codex-status <project> --json` observes filesystem
 ownership; `file_installation: installed` does not mean the app discovered anything.
 Both `desktop_discovery` and `claim_restore` remain `unverified`.

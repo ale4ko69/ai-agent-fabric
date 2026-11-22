@@ -53,7 +53,7 @@ python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py pr
 ```
 
 This installs a relative directory symlink at `.codex/agents` to the eight persona
-TOML files and a governed entry under `.agents/skills`, with local ownership metadata. It refuses **any existing
+TOML files and two entries under `.agents/skills` for project entry and New Product discovery, with local ownership metadata. It refuses **any existing
 `.codex`**, never touches global client configuration, and never falls back to copying,
 junctions or elevation. Existing unrelated project skills are preserved.
 

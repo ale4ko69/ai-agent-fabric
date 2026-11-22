@@ -272,6 +272,8 @@ explicit digest-bound apply. The scoped launcher creates relative native symlink
   -> ../.agent-fabric/runtime/releases/<version>/adapters/codex-project/agents
 .agents/skills/agent-fabric-project
   -> ../../.agent-fabric/runtime/releases/<version>/skills/project-entry
+.agents/skills/agent-fabric-new-product
+  -> ../../.agent-fabric/runtime/releases/<version>/skills/new-product
 .agent-fabric/codex-project-installation.json
 ```
 

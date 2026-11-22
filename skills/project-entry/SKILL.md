@@ -14,6 +14,9 @@ python -I -S -B .agent-fabric/runtime/bin/ai-agent-fabric.py project codex-statu
 python -I -S -B .agent-fabric/runtime/bin/ai-agent-fabric.py work <project-root> --json
 ```
 
+For an explicit New Product request, load the pinned `skills/new-product/SKILL.md`
+from the release in the returned context and follow its discovery entry.
+
 Read the returned pinned contracts and project overlay. Root is entry and recovery
 only: it cannot claim, plan, implement, delegate to specialists, or write durable
 task memory. Use the existing read-only task picker/restore command to select an
