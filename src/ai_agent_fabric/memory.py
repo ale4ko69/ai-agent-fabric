@@ -786,7 +786,7 @@ def _new_product_plan_request_diagnostic(
     return None
 
 
-def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str = "orchestrator") -> bool:
+def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str = "orchestrator", *, session_id: str | None = None) -> bool:
     """Record one hand-off without changing the request's immutable scope payload."""
     if actor != "orchestrator" or not _safe_identifier(idempotency_key):
         raise ValueError("only the orchestrator may dispatch a safe request identifier")
@@ -799,6 +799,8 @@ def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str
             ).fetchone()
             if row is None:
                 raise KeyError(idempotency_key)
+            if session_id is not None and row["session_id"] != session_id:
+                raise ValueError("request does not belong to this Socrates session")
             if row["status"] == "dispatched":
                 return False
             if row["agent"] == "plan":
@@ -852,7 +854,7 @@ def submit_result(project_root: Path, result: dict[str, Any]) -> bool:
         connection.close()
 
 
-def acknowledge_result(project_root: Path, idempotency_key: str, actor: str = "orchestrator") -> bool:
+def acknowledge_result(project_root: Path, idempotency_key: str, actor: str = "orchestrator", *, session_id: str | None = None) -> bool:
     """Atomically persist a queued result and mark it acknowledged by the orchestrator."""
     if actor != "orchestrator" or not _safe_identifier(idempotency_key):
         raise ValueError("only the orchestrator may acknowledge a safe result identifier")
@@ -865,6 +867,8 @@ def acknowledge_result(project_root: Path, idempotency_key: str, actor: str = "o
             ).fetchone()
             if row is None:
                 raise KeyError(idempotency_key)
+            if session_id is not None and row["session_id"] != session_id:
+                raise ValueError("result does not belong to this Socrates session")
             if row["status"] == "acknowledged":
                 return False
             payload = json.loads(row["payload_json"])

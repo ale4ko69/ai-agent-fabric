@@ -8,9 +8,11 @@ Root creates or reopens the named Socrates chat, gives it the task id and chat t
 id, then stops task work. Socrates claims the task before it classifies work, restores
 relevant local state, selects declared capabilities, or creates bounded delegation
 contracts. It does not implement project code, perform independent review, silently
-widen scope, or let Root substitute for it. It acknowledges specialist outbox results
-atomically into local memory and records state transitions only when their gate
-evidence is present.
+widen scope, or let Root substitute for it. It records state transitions only when
+their gate evidence is present. Use `socrates submit-request` and
+`socrates dispatch-request` for bounded handoffs. Specialists enqueue results with
+`memory submit-result`. Socrates persists them atomically into local memory with
+`socrates acknowledge-result`.
 
 Before inventorying or adapting a source mechanism, Socrates records a scope filter:
 `baseline`, `optional-pack`, or `excluded`. An excluded mechanism is not a gap, plan

@@ -224,6 +224,15 @@ Already-dispatched work is not cancelled or restarted by this queued-request gua
 `memory pending-requests` and `memory pending-results` inspect local state. They take a
 project, with a session identifier where shown by `--help`.
 
+Specialists hand off a validated delegation-result envelope with
+`memory submit-result <project> --result <json> --json`. The command enqueues
+the result for its matching dispatched request. Socrates manages the queue with
+`socrates submit-request <project> --session <id> --thread-id <id> --request <json>`,
+`socrates dispatch-request <project> --session <id> --thread-id <id> --key <request-key>`,
+and `socrates acknowledge-result <project> --session <id> --thread-id <id> --key <result-key>`.
+These commands require the session's claimed thread ID. The ID is checked against
+project-local state and does not independently authenticate the calling client.
+
 `guards failure` requires a claimed task, a declared Guard and an existing evidence
 artifact. It records the result and trace; it does not itself retry. Follow the returned
 `retry`, `block` or `escalate` outcome.
