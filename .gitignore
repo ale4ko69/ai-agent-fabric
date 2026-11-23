@@ -9,3 +9,11 @@ build/
 *.db-wal
 .agent-fabric/backups/
 .agent-fabric/harness/
+
+# Project-local Fabric working contracts
+/.agent-fabric/config/capabilities.json
+/.agent-fabric/config/model-routing.json
+/.agent-fabric/config/work-tracking.json
+/.agent-fabric/fabric-binding.json
+/.agent-fabric/profile.json
+/.agent-fabric/project-overlay.md
