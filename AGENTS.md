@@ -17,3 +17,10 @@ after an explicit preview. Do not manually replace user-owned client instruction
 use the Fabric-managed block lifecycle so uninstall removes only Fabric's own block.
 Projects remain local bindings with local memory, tasks, and profiles. Run the test
 suite only during an explicitly requested validation phase.
+
+Start each task branch from local `main` after synchronizing it with GitHub
+using a fast-forward-only update. Use one working branch per task and publish it
+under the same name on GitHub with upstream tracking. Deliver reviewed changes
+through a pull request to `main`. After merging, synchronize local `main`,
+verify the worktree is clean, and remove merged local task branches. Ask the
+owner before using additional publication branches for a staged migration.
