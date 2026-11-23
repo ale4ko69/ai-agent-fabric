@@ -39,6 +39,82 @@ that its final receipt was published but Git exclusion publication failed, use t
 cleanup preview below. Inspect remaining paths and receipts when installation
 ownership is incomplete. See [runtime ownership](global-distribution.md#project-only-runtime).
 
+## Migrate this repository's existing Fabric contracts
+
+This one-time transition applies to existing checkouts of this repository. The
+profile, model routing, work tracking, capabilities, binding and overlay stay
+at their existing paths. Fresh checkouts use the installation procedure above.
+The installer supplies the defaults, including the selected client and release
+for the binding. Project-specific rules in the overlay refine only configuration
+points declared by the selected release.
+
+Publish the bridge commit and this procedure first. Keep the bridge and its
+deletion-only successor separately addressable by commit ID. Hold the successor
+outside the ordinary update ref until affected worktrees have migrated or their
+operators acknowledge this procedure. A regular pull or checkout to the
+successor can delete clean copies and reject locally edited ones.
+
+### Before moving the branch
+
+Fetch the reviewed commits without pulling. Identify the trusted IDs of the
+bridge and successor from the rollout instructions. In the intended checkout,
+confirm Bash is available, verify the repository root and branch, and stop
+Fabric, editors and any Git clients that could write there. Use the normal
+worktree index. Stop if `GIT_INDEX_FILE` is set or a merge, rebase, cherry-pick
+or revert is in progress. Stop if the branch diverged or if moving to the
+bridge would touch any of the six paths below. Fast-forward to the bridge only.
+
+Record the intended branch, bridge and successor IDs, and the SHA-256 of the exact
+bytes of each of the following regular files in an operator record outside the
+worktree. Retain those hashes across retries. Check the current release, client,
+and project status with the pinned launcher's `project context . --json`, and
+record the active task and chat binding using `restore . <task-id> --json` when
+applicable.
+
+```text
+.agent-fabric/config/capabilities.json
+.agent-fabric/config/model-routing.json
+.agent-fabric/config/work-tracking.json
+.agent-fabric/fabric-binding.json
+.agent-fabric/profile.json
+.agent-fabric/project-overlay.md
+```
+
+Verify that HEAD equals the bridge ID and the successor has the bridge as its
+sole parent with `git rev-list --parents -n 1 "$successor"`. Examine its full
+tree diff with `git diff-tree --no-commit-id --no-renames --name-status -r
+"$bridge" "$successor"`. It must contain only the six deletions above. Use
+`git diff --cached --exit-code HEAD` and `git ls-files --unmerged` to confirm an
+unchanged index without unmerged entries. Inspect `git ls-files -v` and stop
+if any entry is marked skip-worktree or assume-unchanged. Stop on any failed
+check or changed hash.
+
+### Apply and verify
+
+Immediately recheck the conditions above. From the intended worktree and branch
+run `git reset --mixed "$successor"`, using the verified full commit ID.
+The mixed reset updates the branch and index while preserving working files.
+Compare all six SHA-256 values with the operator record, confirm they are
+absent from `git ls-files` and covered by the anchored repository rules with
+`git check-ignore -v`, and rerun the same pinned context and task restore
+checks. Investigate remaining changes using `git status --short`. Preserve
+unrelated edits and task packages.
+
+If interrupted, stop if the original hashes are missing or any working file
+is missing or differs. Recheck worktree identity and both commit IDs. If HEAD
+and index match the bridge, rerun preflight. If both match the successor, rerun
+postflight. If HEAD is the bridge and the index matches the successor tree, or
+HEAD is the successor and the index matches the bridge tree, verify the exact
+index tree with `git write-tree` and repeat the mixed reset to the verified
+successor. Stop and inspect any other state. Keep the original operator record
+until postflight passes.
+
+A branch that still tracks these paths may overwrite ignored copies when
+switching back. Use `git checkout --no-overwrite-ignore <branch>` so Git
+refuses to overwrite an ignored file, and stop if it reports a conflict.
+Use a separate worktree when you need to consult a legacy branch.
+
+
 ## Git cleanup for an existing project-only installation
 
 Use a trusted source checkout that implements Git cleanup, including for a target
