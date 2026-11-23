@@ -59,5 +59,5 @@ release content only. Both `desktop_discovery` and `claim_restore` remain
 `unverified`. It does not invoke an app server, use an automated Desktop chat API,
 or equate native subagents with visible, separately claimed Socrates chats.
 Live evidence must record the actual Desktop version, trust state, all eight
-discovered personas, the governed skill, and genuine thread identity/reopening—or
+discovered personas, both governed skills, and genuine thread identity/reopening—or
 report a precise unsupported surface and stop.

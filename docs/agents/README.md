@@ -18,3 +18,9 @@ adapters must render from it and may not define a competing role contract.
 The Metis profile in this source tree supports candidate inspection and a narrow
 approved text-edit action. An installed release exposes only the profiles in its own
 pinned registry.
+
+The request envelope uses the lowercase technical role ID from each profile. Root
+handles entry and recovery, and the claimed Socrates chat owns lifecycle transitions,
+delegation and result acknowledgment. The human owner approves the reviewed plan
+and, in New Product, the separate MVP contract. See the
+[portable workflow](../workflow.md) and [delegation contract](../delegation.md).

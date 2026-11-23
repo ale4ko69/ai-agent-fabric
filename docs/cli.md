@@ -1,7 +1,10 @@
 # CLI operations
 
-Use the installed global `ai-agent-fabric` launcher for a globally bound project. Before a
-release has been installed, the source wrapper is `python scripts/run-fabric.py`.
+Use the installed `ai-agent-fabric` launcher for a user-level binding. Replace
+`ai-agent-fabric` in task examples with
+`python -I -S -B <project>/.agent-fabric/runtime/bin/ai-agent-fabric.py` for a
+project-only binding. Use the selected trusted source wrapper for the explicit
+source installation or Git cleanup shown below.
 Use `--help` after any command for its exact arguments. A path named `<project>` is
 the selected repository; `--home` selects a Fabric installation where supported.
 `--json` selects structured output and does not itself make an operation read-only.
@@ -16,12 +19,13 @@ python -I -S -B scripts/run-fabric.py project install <target> --source <source>
 ```
 
 Invoke the selected source's own script; cross-source dispatch is refused. The target
-must already exist and have no `.agent-fabric` entry. Exactly one of `--preview` or
-`--apply` is required. Preview writes nothing and returns `preview_sha256`, the source
-digest, project-relative `files`, `directories`, and possible SQLite `transient_paths`.
-Apply requires the reviewed digest and refuses stale inputs before its first write.
-All installation writes stay under the target's `.agent-fabric`, without staging in
-system temp or consulting a global release.
+must already exist. A fresh target gets the default contracts. A contract-only
+target must supply all six compatible files and vacant generated paths. Exactly one
+of `--preview` or `--apply` is required. Preview returns `preview_sha256`, the source
+digest, project-relative `files`, `directories`, possible SQLite
+`transient_paths`, and the Git exclusion plan. Apply rechecks the reviewed digest
+and writes project-owned state under `.agent-fabric`. It publishes any planned
+exclusions in local Git metadata after the final receipt and ownership checks. See [project-only Git policy](global-distribution.md#project-only-git-policy).
 
 After installation, explicitly use:
 
@@ -51,21 +55,39 @@ python -I -S -B <target>/.agent-fabric/runtime/bin/ai-agent-fabric.py project co
 The adapter preview lists newly created directories, three relative native directory `links`,
 its local ownership `files`, and the transient pending ownership path. It writes
 nothing and does not probe symlink creation or launch Codex. Apply rechecks that
-separate digest and the intact pinned runtime before its first write.
+separate digest, Git exclusion plan and the intact pinned runtime before its first write.
 
 Any existing `.codex` blocks install, including empty directories, links and existing
 config/instructions/agents. An existing `.agents/skills` may retain unrelated skills,
-but the project-entry name must be free. No existing file is overwritten; no
+but both skill link names must be free. No existing file is overwritten; no
 config merge, global client write, copy, junction or elevation fallback is available.
 If native links cannot be installed/observed, report the exact failing path and
 inspect the retained `.agent-fabric/codex-project-pending.json` manually. There is no
-automatic retry, repair or uninstall for partially owned state.
+automatic retry, repair or uninstall for partially owned state. If the command
+reports a completed receipt followed by a Git publication error, use a fresh
+`project git-cleanup` preview.
 
 `codex-status` distinguishes filesystem `file_installation` (`absent`, `unmanaged`,
 `incomplete`, `invalid`, `installed`) from the independent `desktop_discovery` and
 `claim_restore` fields, both always `unverified` in this version. Runtime `status`
 and `context` include this separate `project_adapter` report; adapter damage does not
 silently convert into a global installation or an active Desktop claim.
+
+### Git cleanup for installed project-only runtime and adapter
+
+From the trusted source checkout implementing this command:
+
+```bash
+python -I -S -B scripts/run-fabric.py project git-cleanup <target> --preview --json
+python -I -S -B scripts/run-fabric.py project git-cleanup <target> --apply --expected-preview-sha256 <preview_sha256> --json
+```
+
+Review the layout and Git exclusions before applying the digest. This updates
+local Git exclusions for validated installed assets and preserves the pinned
+runtime, memory, tasks, binding, settings and index. Run this after an install whose
+receipt completed before Git publication failed. With a legacy pinned launcher,
+preview cleanup again if a subsequent adapter installation adds links. See the
+[existing-installation procedure](project-onboarding.md#git-cleanup-for-an-existing-project-only-installation).
 
 ## Discovery and task routing
 
@@ -89,15 +111,12 @@ ai-agent-fabric start /path/to/project --title "Fix save error" --type small-bug
 
 ### Explicit New Product discovery
 
-New Product v1 is delivered only on the supported **Codex plugin** surface, including
-its separate-chat handoff. Copilot/Claude end-to-end New Product delivery is not
-supported. Normal onboarding and ordinary start/restore for those clients are
-unchanged. A Codex binding is required for `--new-product`; it is not proof that the
-plugin or chat capability is available, which the skill must establish before entry.
-No project-only installation mode is introduced.
-
-Choose an existing empty local folder first, including no hidden entries. Detect the
-host/Bash and client, then use the canonical initialization preview:
+New Product runs in Codex Desktop through either the project-local adapter or the
+Codex plugin. Each path needs a real separate Socrates chat. For a project-only
+installation, verify the bound Codex project, pinned context and installed adapter
+with the local launcher and continue to the task preview below. For the plugin, choose
+an existing empty folder, including no hidden entries. Detect the host/Bash and client,
+then preview initialization with the user-level launcher:
 
 ```text
 ai-agent-fabric project init <project> --client codex --require-empty --preview
@@ -109,7 +128,8 @@ creates a missing folder or removes entries. Initialization writes only the norm
 local binding/profile/config/overlay/memory. It does not initialize Git, create a
 remote repository, install dependencies, or reinstall global Fabric.
 
-Then preview a separate ordinary planned task and obtain its own confirmation:
+Both paths now preview a separate planned task with their own launcher. This
+example uses the user-level launcher:
 
 ```text
 ai-agent-fabric start <project> --title "<title>" --type planned --new-product --json
@@ -128,7 +148,7 @@ Start and restore pass `mode`, `skill`, `session_state`, and `next_open_question
 separate Socrates chat only for opted-in tasks. Root still only opens/reopens the chat;
 brainstorming begins after claim. Ordinary starts/restores retain their existing output
 shape. Restore is read-only and neither restarts discovery nor reinitializes the folder.
-See the [New Product workflow](workflow.md#new-product-opt-in).
+See the [New Product guide](new-product.md) for both launch paths, handoff and discovery.
 
 New Product adds task-local `mvp-scope.json`, the authoritative MVP contract, distinct
 from editable explanatory `spec.md`. Populate the initially empty contract before
@@ -307,11 +327,10 @@ locations and adapter contracts. The following mutations should first be run wit
 | `project status <project>` / `context <project>` | Read binding status or pinned contract paths. | Initialize only on explicit request or enter work. |
 | `project command-preview <project> <name>` | Resolves a declared command after host checks; it does not execute it. | Decide whether the declared action is authorized. |
 
-The release's `skills/` and the Fabric-owned Codex plugin include `new-product`;
-the supported v1 delivery surface is the Codex plugin only, not Copilot or Claude.
-Legacy direct Codex skill links retain their five-name registry and ownership-record
-format; New Product does not require adding a user-level link or changing that record.
-No global delivery action is triggered by starting or restoring a project task.
+The Codex plugin ships New Product. The project-only runtime includes the same
+skill in its pinned release, and the optional project adapter links it into the
+project's `.agents/skills`. Legacy direct user-level Codex skill links retain their
+five-name registry. Starting or restoring a project task makes no adapter changes.
 
 `bootstrap bash` reports an installation plan; `--install` explicitly applies it.
 `secret prompt <project> --destination <relative-path> --label <label> --preview`

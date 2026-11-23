@@ -5,69 +5,72 @@ paths, tracker identities, service ports, client-specific commands, and credenti
 Those belong to the project profile and optional adapters.
 
 ```text
-Root opens project through a selected client
-        |
-        v
-read-only Fabric status -> bound release + local profile + local memory
-        |
-        v
-detect host/client capabilities -> restore relevant task state
-        |
-        v
-Root creates or reopens the task's separate Socrates chat
-        |
-        v
-Socrates claims the durable task id and owns all remaining transitions
-        |
-        v
-triage the work
-  | local correction        | small bug             | planned work
-  v                         v                       v
-bounded edit + evidence   tasks + evidence     spec -> research -> plan
-                                                  |              |
-                                                  v              v
-                              Aristotle evidence -> Plato plan -> Kepler verdict
-                                                  |
-                                                  v
-                                           revision, if required
-                                                  |
-                                     required human approval
-                                                  |
-                                                  v
-                                        scoped implementation
-                                                  |
-                                      Athena review -> validation
-                                                  |
-                                                  v
-                                      evidence -> close-out -> rollout -> archive
+User-level client bootstrap        Project-only pinned launcher
+                 |                  |
+                 +--> status, host/client detection, project context
+                                      |
+                              Root previews start or restores
+                                      |
+                  +-------------------+-------------------+
+            Supported client handoff           Project-only manual transfer
+                  |                                       |
+                  +--------> separate Socrates chat <-----+
+                                      |
+                                  task claim
+                                      |
+                       +--------------+--------------+
+                   local correction  small bug    planned work
+                     edit + evidence  tasks        Aristotle evidence
+                                      + evidence       -> Plato plan
+                                                       -> Kepler verdict
+                                                       -> owner approval
+                                                       -> Heracles implementation
+                                                       -> Athena review
+                                                       -> authorized validation
+                                      |
+                          local evidence and close-out
+                                      |
+                        rollout done or skipped with evidence
+                                      |
+                          completion and journal capture*
+                                      |
+                               recoverable archive
 ```
+
+*Journal capture applies on releases that support the project journal.*
 
 ## Session start
 
-1. The global bootstrap checks Fabric status without writing files.
-2. A bound project loads only its pinned release, project profile, local overlay, and
-   relevant project-local memory.
-3. Detect host, Bash, Python, Git, and selected client before selecting a command.
-4. Restore the active task package and pending specialist results when work resumes.
-5. If the repository is not bound, report that fact and show initialization preview
-   only after the person asks to enable Fabric for it.
+1. Enter through the launcher for the chosen installation path. Use the user-level
+   bootstrap for a user-level binding and the pinned local launcher from the
+   verified root for project-only Fabric. See [the two setup paths](using-fabric.md).
+2. Read project status and context. Resolve the detected host, available executables
+   and selected client before choosing commands. An unbound project needs the
+   owner's explicit instruction before setup.
+3. Load the pinned release contracts and the project profile and overlay. Use
+   `work` to route to a known task or intake for new work. On resume, inspect the
+   saved package and pending results.
 
 ## Entry and restore discipline
 
-A client-facing `work` entrypoint is a router, not another workflow: it either restores
-one known active task or starts new-task intake. It never silently starts over and never
-mixes multiple task packages. `start --apply` creates a prepared task package and a
-`socrates_chat_request`; it must not claim that Socrates is running. The selected client
-adapter creates or reopens a separate chat for that task. Socrates claims the returned
-task id with that chat's thread id before lifecycle activation. Root remains only the
-entry and recovery boundary and must not impersonate Socrates or progress the task.
+Preview a new task with `start`. After the owner confirms the preview,
+`start --apply` prepares the package and returns a `socrates_chat_request` for
+a separate chat. With the Codex plugin, Root uses its supported client handoff.
+With the project-only Codex adapter, follow the pinned project-entry skill and ask
+the owner to create a separate real Desktop project chat or reopen the exact saved
+chat. Transfer the task id, pinned context, Socrates profile, task package and
+activation packet. File installation and visible links establish only filesystem
+state. Desktop skill discovery and claim/restore need evidence from the actual
+client.
 
-For new planned work, Socrates materializes the applicable workflow checklist in the
-task package. Each step is `pending`, `in_progress`, `done`, or `skipped`; a completed
-step names evidence, while a skipped step names its reason. Discovery records facts,
-conflicts, confidence, and blocking questions before planning or implementation.
-Client-specific slash commands may render this protocol only through a selected adapter;
-the protocol itself never assumes a Copilot command folder or a global project path.
+Only the separate chat can run `socrates claim`, using its real thread identity
+from the client. If the identity or required handoff is unavailable, stop at the
+entry or recovery boundary. `restore` reads the binding and pending state. Reopen
+the exact bound chat to continue; preserve its claim and progress.
+
+Socrates records checklist transitions with evidence for completed steps and a
+reason and evidence for skipped steps. Discovery records findings, conflicts,
+confidence and open questions before planning or implementation.
 
 ## Triage and planning
 
@@ -86,90 +89,13 @@ Plato revises the plan and Kepler gives a fresh verdict.
 
 ## New Product (opt-in)
 
-The explicit `new-product` skill is a discovery mode for ordinary planned work, not
-the default entry, a new role, or a second lifecycle. **V1 delivery supports only the
-Codex plugin surface and its separate-chat handoff.** It does not claim end-to-end
-Copilot or Claude New Product support; their ordinary Fabric plumbing is unchanged.
-On an unsupported surface, stop without initialization, installation, or a substitute
-handoff. Project-only installation remains a separate future design, not this feature.
-
-First the owner chooses an existing
-empty local folder. Root detects host/Bash and client, presents canonical
-`project init --client codex --require-empty --preview`, and obtains explicit approval before applying
-the local binding/profile/config/overlay/memory writes. No source scaffold, Git setup,
-remote repository, dependency installation, or global reinstall belongs to this entry.
-
-After initialization, Root separately previews
-`start --type planned --new-product`, obtains confirmation, and applies the ordinary
-start. It creates the normal task package under the configured root
-(`docs/specs/active/<task-id>/` by default) and requests a separate Socrates chat.
-Root forwards the entire request, including the saved mode and next open question,
-and stops. Root remains entry/recovery only; real brainstorming starts only in the
-separate chat after its durable claim.
-
-Socrates collaboratively explores users, problems, outcomes, constraints, alternatives,
-and trade-offs. It asks focused questions, distinguishes assumptions from facts, and
-uses Aristotle selectively for bounded research rather than launching a mandatory
-research phase for every idea. An optional question-led prototype must have an agreed
-learning question, scope, and success signal; executable implementation still needs
-the normal reviewed plan and owner approval.
-
-Before normal planning, Socrates fills task-local `mvp-scope.json` with the agreed
-scope, exclusions/non-goals, observable acceptance criteria, and constraints.
-It is the authoritative MVP contract; `spec.md` remains editable explanation including
-user value, rationale, and unresolved risks. The [exact JSON shape](cli.md#explicit-new-product-discovery)
-has no undeclared fields or duplicate keys.
-`socrates approve-mvp --preview` reads that structured scope and its canonical digest;
-spec digest/revision remain informational. Socrates presents the contract and relevant
-risks, keeping discovery open until the owner's explicit decision. If the owner already
-explicitly approved this exact contract in chat, record that decision instead of asking
-again. A suggestion or historical proposal is not a decision on changed scope.
-Claimed Socrates records the agent-attested decision with `--reviewed-scope-sha256`,
-the actual current thread id, a chat reference, and an existing decision artifact inside
-this task's `evidence/`. This uses existing memory records and the authorization trust
-model, not a new database schema or independent proof of owner identity.
-
-The runtime rejects closing or skipping discovery, further lifecycle transitions, and
-planning delegation submission/dispatch without a current MVP approval. The record
-binds the task id, authoritative scope path, structured contract/canonical digest, and
-exact decision-artifact digest. Formatting the JSON, editing explanatory prose, or
-incrementing spec revision does not revoke MVP approval. Changing the contract requires
-an explicit owner decision covering the change; reuse an already explicit matching
-decision without a duplicate question. Changed decision evidence still requires
-re-attestation, never silent acceptance. Legacy approvals bound only to full spec text
-fail closed: populate the structured contract from the agreed MVP and explicitly attest
-the prior decision only if it matches. No automatic conversion or database migration.
-A prose session-state note alone cannot unlock planning. A task-start audit marker
-preserves the opt-in even if its markdown marker is subsequently removed. This gate
-authorizes planning only, not implementation; ordinary reviewed-plan approvals still
-bind their full artifacts/revisions and are not weakened by this MVP rule.
-
-Fold intersecting owner instructions into the same task and update the contract only
-when scope, non-goals, acceptance, or constraints actually change. Preserve completed
-progress, findings, and current work; continue unaffected permitted steps rather than
-restarting discovery or opening a duplicate task. Reconcile only the impacted work
-with the explicit owner decision and ordinary gates.
-
-At enqueue, a New Product Plato (`plan`) request must reference this task's authoritative
-MVP scope path and is internally pinned to the approved digest. At dispatch, stale
-or legacy unpinned queued requests fail closed even after a new approval. Socrates
-replaces them with a fresh request/idempotency key using the current approval, without
-asking the owner again. Pending-request/restore views retain obsolete rows with an
-actionable read-only `dispatch_guard` diagnostic, not another SQLite status or a deleted
-task. Unaffected requests keep their public shape; already-running Plato is outside this
-queue case and is not reset or cancelled.
-
-Only Socrates persists discovery decisions and episodic memory. Aristotle and other
-specialists use the existing delegation/outbox protocol. The existing
-`session-state.md` stores `Mode: new-product`, progress, alternatives, the MVP owner
-decision, and one `## Next open question` section. Socrates updates it after meaningful
-answers; restore returns the saved question and state reference without writing or
-restarting discovery. The saved chat, pending results, and ordinary checklist remain
-authoritative. No new memory store or schema is introduced.
-
-After MVP approval, all ordinary planning, Kepler review, reviewed-package owner
-approval, implementation, review, authorized validation, and delivery gates remain.
-Ordinary start/restore outputs and workflow are unchanged unless this mode was chosen.
+Choose New Product explicitly to explore an idea before ordinary planned work.
+Codex Desktop supports entry through the user-level plugin or a bound project-only
+Codex adapter. In both routes, the claimed Socrates chat records discovery and
+presents an exact MVP contract for explicit owner approval before planning. The
+reviewed implementation plan has its own approval. Follow the
+[New Product guide](new-product.md) for both launch paths, handoff, discovery,
+decision evidence, and restore.
 
 ## Execution and review
 
@@ -187,23 +113,34 @@ practical operational rule, not an atomic guarantee against all concurrent proce
 
 ## Interruption and close-out
 
-Specialist results enter the project-local outbox with an idempotency key. Socrates is
-the sole durable-memory writer and can replay unacknowledged results safely after an
-interruption. `harness resume` remains read-only; `restore` returns the saved Socrates
-chat binding or a request to create it, but does not execute project work. Closing a
-task requires the applicable local evidence and moves its package to a recoverable
-archive; it never deletes history. When the owner has declared autonomous delivery,
-successful review and validation automatically resume the durable `rollout` step.
-Socrates commits only task-scoped changes, pushes to the configured remote, and invokes
-the project's declared release action before it may complete the task. A Guard outcome,
-missing delivery mechanism, or newly required scope/credential is an actionable
-blocker; routine commit, push, and release operations do not require separate approval.
+Socrates submits and dispatches bounded requests. Specialists enqueue results by
+idempotency key. Socrates acknowledges each result into durable project-local
+memory and advances the workflow on the referenced evidence. On interruption,
+inspect pending requests and results and acknowledge any completed handoffs. See
+[delegation and artifact evidence](delegation.md).
 
-After `rollout` completes, the claimed Socrates chat uses `socrates archive` with an
-auditable reason. The package moves from `active` to `archived`; the router can then
-start the next task without mistaking completed work for an active lifecycle. A terminal
-Guard resumes only through `socrates resolve-guard`, with a fresh project-local evidence
-artifact and the owner's recorded direction.
+Socrates records the task's changes and observed checks as close-out facts on
+releases with journal capture. A completed task's journal entry survives
+archival. `project journal` reads the local entries. `project release-notes`
+writes versioned local notes from explicitly selected journal entries. Publishing
+them is a separate action. See [project journal and release notes](cli.md#project-journal-and-release-notes).
+
+An owner-authorized rollout may include committing task-scoped changes, pushing
+to the configured remote and invoking the project's declared release action.
+Record the actual outcome before completing a required rollout. When the owner
+has declared autonomous delivery for the task, proceed through its authorized
+steps on successful review and validation. A Guard outcome, missing delivery
+mechanism, or scope or credential change requires an actionable status. When
+rollout falls outside the accepted task, Socrates closes the durable `rollout`
+step as `skipped` with an existing evidence artifact and a reason that records
+the task's delivery boundary. Fabric captures the journal entry on releases with
+journal support and marks the task complete only after every durable step is
+`done` or `skipped`.
+
+The claimed chat uses `socrates archive` with an auditable reason after
+completion. The package moves from `active` to `archived`, keeping its history
+available. A terminal Guard resumes only through `socrates resolve-guard` with
+fresh project-local evidence and the owner's recorded direction.
 
 ## Guards and concrete failures
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 import hashlib
 import json
 import os
@@ -10,22 +11,34 @@ from typing import Any
 
 from . import distribution
 from .agent_profiles import default_capabilities, default_profiles
+from .capabilities import validate_capabilities
 from .clients import detect_client
 from .environment import detect_environment
 from .gates import default_gates
 from .installer import default_project_profile, validate_project_profile
 from .memory import MEMORY_SCHEMA_VERSION, initialize
-from .model_routing import default_routing
-from .work_tracking import default_config
+from .model_routing import default_routing, validate_routing
+from .project_git import MEMORY_PATH, MEMORY_SIDECARS, apply_project_git_plan, project_git_plan
+from .work_tracking import default_config, validate_config
 
 
 PROJECT_INSTALLATION_FILE = "project-installation.json"
+PROJECT_RECEIPT = f".agent-fabric/{PROJECT_INSTALLATION_FILE}"
 RUNTIME_DIRECTORY = ".agent-fabric/runtime"
 LAUNCHER = f"{RUNTIME_DIRECTORY}/bin/ai-agent-fabric.py"
 EXCLUDED_ASSETS = {".codex-plugin", "hooks", "release-source.json"}
 DIGEST_PATTERN = re.compile(r"[a-f0-9]{64}")
 RESERVED_COMPONENT = re.compile(r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.IGNORECASE)
 PROJECT_RELEASE_EPOCH = "1970-01-01T00:00:00+00:00"
+RUNTIME_GIT_PATHS = [PROJECT_RECEIPT, MEMORY_PATH, *MEMORY_SIDECARS]
+PROJECT_CONTRACTS = {
+    ".agent-fabric/profile.json": validate_project_profile,
+    ".agent-fabric/config/capabilities.json": validate_capabilities,
+    ".agent-fabric/config/work-tracking.json": validate_config,
+    ".agent-fabric/config/model-routing.json": validate_routing,
+    ".agent-fabric/fabric-binding.json": distribution.validate_project_binding,
+    ".agent-fabric/project-overlay.md": None,
+}
 
 
 def _portable_component(value: str) -> bool:
@@ -74,6 +87,56 @@ def checked_directory(value: str | Path, *, owned: bool = False) -> Path:
     if not stat.S_ISDIR(info.st_mode):
         raise ValueError(f"Existing directory required: {path}")
     return path
+
+
+def _check_case_alias(path: Path) -> None:
+    if path.parent.exists() and any(
+        entry.name.casefold() == path.name.casefold() and entry.name != path.name
+        for entry in path.parent.iterdir()
+    ):
+        raise FileExistsError(f"Case-ambiguous project installation path: {path}")
+
+
+def _existing_contracts(project: Path, client: str, version: str) -> dict[str, bytes]:
+    from .codex_project import PENDING, RECEIPT
+
+    state = project / ".agent-fabric"
+    _check_case_alias(state)
+    if not os.path.lexists(state):
+        return {}
+    for directory in (state, state / "config"):
+        _check_case_alias(directory)
+        if not os.path.lexists(directory) or not directory.is_dir() or directory.is_symlink():
+            raise FileExistsError(f"Existing .agent-fabric must contain complete compatible project contracts: {directory}")
+        _check_path(directory, owned=True)
+    for relative in [RUNTIME_DIRECTORY, *RUNTIME_GIT_PATHS, RECEIPT, PENDING]:
+        candidate = project / relative
+        _check_case_alias(candidate)
+        if os.path.lexists(candidate):
+            raise FileExistsError(f"Existing generated project state will not be overwritten: {candidate}")
+    preserved: dict[str, bytes] = {}
+    for relative, validator in PROJECT_CONTRACTS.items():
+        path = project / relative
+        _check_case_alias(path)
+        if not os.path.lexists(path) or not stat.S_ISREG(_check_path(path, owned=True).st_mode):
+            raise FileExistsError(f"Existing project contracts are incomplete or invalid: {path}")
+        data = path.read_bytes()
+        content = data.decode("utf-8")
+        if validator is not None:
+            value = json.loads(content)
+            validator(value)
+        preserved[relative] = data
+    binding = json.loads(preserved[".agent-fabric/fabric-binding.json"])
+    capabilities = json.loads(preserved[".agent-fabric/config/capabilities.json"])
+    if binding["client"] != client or binding["fabric_release"] != version:
+        raise ValueError("Existing project binding must match the selected client and release")
+    if (
+        binding["profile"] != ".agent-fabric/profile.json"
+        or binding["project_overlay"] != ".agent-fabric/project-overlay.md"
+        or set(binding["enabled_packs"]) != set(capabilities["enabled_packs"])
+    ):
+        raise ValueError("Existing binding must match the supported project contracts")
+    return preserved
 
 
 def _json_bytes(value: dict[str, Any]) -> bytes:
@@ -130,9 +193,6 @@ def _plan(target: str | Path, source_root: str | Path, client: str) -> tuple[dic
         raise ValueError("Project runtime installation currently requires --client codex")
     environment = detect_environment()
     detected_client = detect_client(project)
-    state = project / ".agent-fabric"
-    if os.path.lexists(state):
-        raise FileExistsError(f"Any existing .agent-fabric blocks installation: {state}")
     if not distribution._source_owns_installer(source):
         raise ValueError("Invoke scripts/run-fabric.py from the selected trusted source; cross-source dispatch is disabled")
     distribution._validate_release_assets(source)
@@ -140,6 +200,7 @@ def _plan(target: str | Path, source_root: str | Path, client: str) -> tuple[dic
     distribution._validate_version(version)
     if not _portable_component(version):
         raise ValueError("Unsafe release identity")
+    preserved = _existing_contracts(project, client, version)
     source_digest = distribution.release_source_digest(source)
     prefix = f"{RUNTIME_DIRECTORY}/releases/{version}"
     files, directories = _snapshot(source, prefix)
@@ -171,6 +232,7 @@ def _plan(target: str | Path, source_root: str | Path, client: str) -> tuple[dic
         "# Project overlay\n\n"
         "Project runtime only; client activation is none. Add project-specific rules here.\n"
     ).encode("utf-8")
+    files.update(preserved)
     home = project / RUNTIME_DIRECTORY
     manifest = {
         "schema_version": 2, "version": version, "created_at": PROJECT_RELEASE_EPOCH,
@@ -193,7 +255,7 @@ def _plan(target: str | Path, source_root: str | Path, client: str) -> tuple[dic
     distribution.validate_installation_manifest(installation)
     files[f"{RUNTIME_DIRECTORY}/installation.json"] = _json_bytes(installation)
     files[LAUNCHER] = _launcher(project, project / prefix, manifest_hash).encode("utf-8")
-    runtime_created = {".agent-fabric/memory.db", f".agent-fabric/{PROJECT_INSTALLATION_FILE}"}
+    runtime_created = {MEMORY_PATH, PROJECT_RECEIPT}
     for name in set(files) | runtime_created | directories.copy():
         directories.update(str(parent) for parent in PurePosixPath(name).parents if str(parent) != ".")
     all_paths = set(files) | runtime_created | directories
@@ -220,12 +282,18 @@ def _plan(target: str | Path, source_root: str | Path, client: str) -> tuple[dic
         "files": sorted(set(files) | runtime_created),
         "runtime_created_files": sorted(runtime_created),
         "directories": sorted(directories),
-        "transient_paths": [".agent-fabric/memory.db" + suffix for suffix in ("-journal", "-wal", "-shm")],
+        "transient_paths": list(MEMORY_SIDECARS),
+        "preserved_files": sorted(preserved),
+        "git": project_git_plan(
+            project, environment, _runtime_exclude_paths(files),
+            new_contracts=() if preserved else tuple(PROJECT_CONTRACTS),
+            reserved=(RUNTIME_DIRECTORY,),
+        ),
     }
     if distribution.release_source_digest(source) != source_digest:
         raise ValueError("Source changed while preparing preview")
     plan["preview_sha256"] = _digest(plan)
-    return plan, files
+    return plan, {name: data for name, data in files.items() if name not in preserved}
 
 
 def project_install_preview(target: str | Path, source: str | Path, client: str) -> dict[str, Any]:
@@ -262,9 +330,11 @@ def install_project(
     }:
         raise ValueError("Target changed since preview")
     state = project / ".agent-fabric"
-    state.mkdir(mode=0o700)
+    existing = {".agent-fabric", ".agent-fabric/config"} if plan["preserved_files"] else set()
+    if not existing:
+        state.mkdir(mode=0o700)
     for relative in sorted(plan["directories"], key=lambda name: (len(PurePosixPath(name).parts), name)):
-        if relative != ".agent-fabric":
+        if relative != ".agent-fabric" and relative not in existing:
             _check_path((project / relative).parent, owned=True)
             (project / relative).mkdir(mode=0o700)
     for relative, data in sorted(files.items()):
@@ -272,11 +342,11 @@ def install_project(
     # Проверить опубликованный release по подготовленным хешам, не пересоздавая manifest.
     distribution._validate_installed_release(Path(plan["fabric_home"]), plan["fabric_release"])
     # Только новая БД: canonical initializer создаёт текущую схему, существующую БД не трогаем.
-    for relative in [".agent-fabric/memory.db", *plan["transient_paths"]]:
+    for relative in [MEMORY_PATH, *plan["transient_paths"]]:
         if os.path.lexists(project / relative):
             raise FileExistsError(f"Memory ownership conflict: {relative}")
     _check_path(state, owned=True)
-    _write_new(project, ".agent-fabric/memory.db", b"")
+    _write_new(project, MEMORY_PATH, b"")
     initialize(project)
     record = {key: plan[key] for key in (
         "schema_version", "mode", "project_root", "fabric_home", "fabric_release",
@@ -285,8 +355,23 @@ def install_project(
     )}
     validate_project_installation(record)
     # Ownership публикуется последним; после сбоя дерево сохраняется для ручного осмотра.
-    _write_new(project, f".agent-fabric/{PROJECT_INSTALLATION_FILE}", _json_bytes(record))
-    load_project_installation(project)
+    receipt = _json_bytes(record)
+    _write_new(project, PROJECT_RECEIPT, receipt)
+
+    def verify_ownership() -> None:
+        if (project / PROJECT_RECEIPT).read_bytes() != receipt:
+            raise ValueError("Project installation receipt changed during Git publication")
+        paths, ownership = observe_runtime_git_ownership(project, launcher_sha256=plan["file_sha256"][LAUNCHER])
+        if paths != plan["git"]["paths"]:
+            raise ValueError("Owned runtime paths changed during Git publication")
+        for name, digest in ownership.items():
+            if name in plan["file_sha256"] and digest != plan["file_sha256"][name]:
+                raise ValueError(f"Owned runtime file changed during Git publication: {name}")
+
+    try:
+        apply_project_git_plan(project, detect_environment(), plan["git"], verify_ownership=verify_ownership)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"Runtime ownership receipt was published; review project git-cleanup: {error}") from error
     return {**plan, "status": "installed"}
 
 
@@ -351,6 +436,52 @@ def load_project_installation(project_root: Path) -> dict[str, Any]:
     if binding["fabric_release"] != record["fabric_release"] or binding["client"] != record["client"] or installation["current_release"] != record["fabric_release"] or installation["fabric_home"] != record["fabric_home"]:
         raise ValueError("Project runtime release, home or binding conflict")
     return record
+
+
+def _runtime_exclude_paths(files: Iterable[str]) -> list[str]:
+    return [*RUNTIME_GIT_PATHS, *sorted(name for name in files if name.startswith(RUNTIME_DIRECTORY + "/"))]
+
+
+def observe_runtime_git_ownership(
+    project: Path, *, launcher_sha256: str | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    """Only exact known generated files are eligible for new Git exclusions."""
+    runtime = load_project_installation(project)
+    for name in [RUNTIME_DIRECTORY, *RUNTIME_GIT_PATHS]:
+        _check_case_alias(project / name)
+    version = runtime["fabric_release"]
+    home = Path(runtime["fabric_home"])
+    manifest = distribution._validate_installed_release(home, version)
+    release = f"{RUNTIME_DIRECTORY}/releases/{version}"
+    manifest_path = f"{release}/release-manifest.json"
+    registry = f"{RUNTIME_DIRECTORY}/installation.json"
+    install_files = {LAUNCHER, registry, manifest_path, *(f"{release}/{name}" for name in manifest["files"])}
+    receipt_files = {name for name in runtime["files"] if name.startswith(RUNTIME_DIRECTORY + "/")}
+    if receipt_files != install_files or set(runtime["transient_paths"]) != set(MEMORY_SIDECARS):
+        raise ValueError("Project runtime receipt has an unsupported generated inventory")
+    directories = {
+        name for name in runtime["directories"] if name == RUNTIME_DIRECTORY or name.startswith(RUNTIME_DIRECTORY + "/")
+    }
+    for entry in home.rglob("*"):
+        relative = entry.relative_to(project).as_posix()
+        info = _check_path(entry, owned=True)
+        if not ((relative in install_files and stat.S_ISREG(info.st_mode)) or (
+            relative in directories and stat.S_ISDIR(info.st_mode)
+        )):
+            raise ValueError(f"Unexpected content in the owned runtime directory: {relative}")
+    with (project / MEMORY_PATH).open("rb") as stream:
+        if stream.read(16) != b"SQLite format 3\0":
+            raise ValueError("Existing project memory is not a SQLite database")
+    ownership = {
+        name: hashlib.sha256((project / name).read_bytes()).hexdigest()
+        for name in [PROJECT_RECEIPT, LAUNCHER, registry, manifest_path]
+    }
+    if launcher_sha256 is None:
+        expected_launcher = _launcher(project, project / release, ownership[manifest_path]).encode("utf-8")
+        launcher_sha256 = hashlib.sha256(expected_launcher).hexdigest()
+    if ownership[LAUNCHER] != launcher_sha256:
+        raise ValueError(f"Project launcher differs from the supported Fabric template: {LAUNCHER}")
+    return _runtime_exclude_paths(install_files), ownership
 
 
 def local_fabric_home(project: Path) -> Path | None:

@@ -4,15 +4,14 @@
 **Activation:** only after a separate task chat claims its durable task id
 **Authority:** coordinates task state, delegation, and the sole durable memory write.
 
-Root creates or reopens the named Socrates chat, gives it the task id and chat thread
-id, then stops task work. Socrates claims the task before it classifies work, restores
-relevant local state, selects declared capabilities, or creates bounded delegation
-contracts. It does not implement project code, perform independent review, silently
-widen scope, or let Root substitute for it. It records state transitions only when
-their gate evidence is present. Use `socrates submit-request` and
-`socrates dispatch-request` for bounded handoffs. Specialists enqueue results with
-`memory submit-result`. Socrates persists them atomically into local memory with
-`socrates acknowledge-result`.
+Root coordinates creation or recovery of the separate Socrates chat using the
+selected entry path. The Codex plugin uses its supported handoff. The project-only
+Codex adapter requires explicit manual transfer to a real Desktop project chat.
+Socrates verifies its client thread identity and claims the task before classifying
+work, restoring task state, selecting capabilities or delegating. It coordinates
+implementation and independent review through specialists and records transitions
+when their gate evidence is present. See [entry and restore](../workflow.md#entry-and-restore-discipline)
+and the [delegation contract](../delegation.md).
 
 Before inventorying or adapting a source mechanism, Socrates records a scope filter:
 `baseline`, `optional-pack`, or `excluded`. An excluded mechanism is not a gap, plan

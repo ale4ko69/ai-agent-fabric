@@ -33,14 +33,13 @@ python -I -S -B scripts/run-fabric.py project install /path/to/project --source 
 python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project status /path/to/project --json
 ```
 
-The target must already exist and must have **no `.agent-fabric` entry at all**.
-Preview writes nothing; review its project-relative files, directories and possible
-SQLite sidecars before applying the returned digest. Everything installed stays under
-the target's `.agent-fabric`, without global client files or a global installation.
-`client_activation: none` is intentional: runtime installation does not activate Codex
-Desktop, a plugin or a Socrates chat handoff. It prepares dormant persona TOML files
-and a governed project-entry skill inside the immutable release. Existing native project
-instructions remain untouched. See [project-only onboarding](docs/project-onboarding.md#project-only-runtime).
+Use an existing target. Fabric creates project contracts for a fresh target and
+preserves compatible existing contracts byte for byte. Review the installation
+inventory and any Git-local exclusions in the preview before applying its digest.
+`client_activation: none` means the runtime is ready for its pinned launcher. Codex
+Desktop delivery requires the separate adapter stage below. Existing installations
+can preview a [Git cleanup](docs/project-onboarding.md#git-cleanup-for-an-existing-project-only-installation)
+without changing their release or binding. See [project-only onboarding](docs/project-onboarding.md#project-only-runtime).
 
 ### Optional project-local Codex adapter
 
@@ -52,10 +51,10 @@ python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py pr
 python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project codex-status /path/to/project --json
 ```
 
-This installs a relative directory symlink at `.codex/agents` to the eight persona
-TOML files and two entries under `.agents/skills` for project entry and New Product discovery, with local ownership metadata. It refuses **any existing
-`.codex`**, never touches global client configuration, and never falls back to copying,
-junctions or elevation. Existing unrelated project skills are preserved.
+This creates three relative directory links. `.codex/agents` exposes the eight
+persona TOML files, and two entries under `.agents/skills` expose project entry and
+New Product. Any existing `.codex` entry blocks installation. Existing unrelated
+project skills are preserved. Review any Git-local exclusions in the adapter preview.
 
 `file_installation: installed` means only that the native links are observable on the
 filesystem. **Desktop discovery and claim/restore are unverified.** Root transfers a
@@ -67,7 +66,9 @@ See [the next-machine procedure](docs/using-fabric.md#project-local-codex-next-m
 ### User-level distribution and client adapters
 
 For a first installation from a source checkout with Python 3.10 or later, inspect and
-install the versioned release, then preview and enable the selected client adapter:
+install the versioned release, then preview and enable the selected user-level
+client adapter. Install the Fabric plugin separately if you want its Codex Desktop
+skills and hook.
 
 ```bash
 python scripts/run-fabric.py distribution install-release . --preview
@@ -88,20 +89,23 @@ ai-agent-fabric project init /path/to/project --client codex
 
 The global launcher must be available on your shell's path. On Windows without a
 configured Bash launcher, use the installed Python launcher named in the Fabric
-bootstrap. See [installation and project binding](#install-and-bind-a-project) for
+bootstrap. See [user-level project binding](#bind-a-project-to-a-user-level-release) for
 the client and ownership boundaries. For an existing installation, check the
 [cross-version installer limitation](docs/global-distribution.md#release-layout)
 before upgrading.
+
+Use [New Product discovery](docs/new-product.md) in Codex Desktop to develop an idea
+into an owner-approved MVP before implementation planning.
 
 ## At a glance
 
 ```text
 user request
-  -> project context and local task state
-  -> Socrates coordinates a bounded specialist task
-  -> specialist returns a typed result
-  -> Socrates records evidence and advances the next gate
-  -> review, validation, archive, and later safe restore
+  -> Root reads project context and prepares or restores a task packet
+  -> separate Socrates chat claims the task or resumes its saved binding
+  -> Socrates records and dispatches a bounded request
+  -> specialist submits a typed result to the project-local outbox
+  -> Socrates acknowledges the result and advances the next gate
 ```
 
 The release supplies the common protocol. A bound project supplies only its own facts:
@@ -126,20 +130,20 @@ companions are in [`docs/agents`](docs/agents/README.md).
 The optional Metis profile and maintenance commands shown here describe this source
 tree; a bound project has only the capabilities in its pinned installed release.
 
-Socrates is the sole durable-memory writer. Specialists receive a bounded delegation
-contract and return typed findings and artifact references; Socrates persists and
-acknowledges the result in the project-local store. That gives a single ordered audit
-trail and permits safe recovery after interruption.
+Socrates owns durable task evidence. Specialists receive a dispatched contract and
+submit typed findings and artifact references to the local outbox. Socrates
+acknowledges the result into durable memory. See [delegation](docs/delegation.md)
+for the request, result and evidence contracts.
 
 ## Architecture and boundaries
 
 ```text
-AI Agent Fabric release                         bound target repository
-------------------------                         -------------------------
-roles + gates + adapters  ---- release binding -> .agent-fabric/profile.json
-global launcher            ---- commands ------> docs/specs/ task packages
-                                                    .agent-fabric/memory.db
-                                                    .agent-fabric/harness/
+user-level launcher + versioned release  -- explicit binding --+
+                                                               |
+project-only pinned launcher + release   -- installed binding -+
+                                                               v
+                                                    target project profile
+                                                    local tasks, memory, Harness
 ```
 
 The core contains no customer-specific identifiers, credentials, machine paths,
@@ -149,7 +153,8 @@ selected adapter. See [architecture](docs/architecture.md) and
 
 ### Global-to-project configuration flow
 
-This diagram describes the user-level adapter mode, not the project-only runtime.
+This diagram shows the user-level distribution. Each project explicitly pins a
+release in that distribution.
 
 ```mermaid
 flowchart TD
@@ -196,7 +201,7 @@ remain project-local; a client plugin or bootstrap never makes them global.
 ```mermaid
 flowchart TD
     user["User"] --> root["Root\nentry and recovery coordinator"]
-    root --> socrates["Separate Socrates chat\nclaimed project orchestrator"]
+    root -->|plugin handoff or manual project-only transfer| socrates["Separate Socrates chat\nclaims task with its actual thread ID"]
     state["Project state\nbinding, profile, task, memory"] --> socrates
     socrates -->|delegates discovery| aristotle["Aristotle\nresearch and dependency evidence"]
     aristotle -->|typed findings| socrates
@@ -217,13 +222,13 @@ flowchart TD
     socrates -->|archives evidence| archive["Task package and archive"]
 ```
 
-This is the target execution contract: Root creates or reopens the visible Socrates
-chat, then stops task work. Socrates claims the task id and is the only role that
-writes durable project memory or Harness signals; every specialist returns a bounded
-result to Socrates. `start --apply` creates a task package and a pending Socrates chat
-request; `restore` returns its saved chat binding or a request to create it.
+`start --apply` creates a task package and a pending Socrates chat request.
+`restore` returns the saved chat binding or the pending request. Root handles entry
+and recovery. Project-only Codex requires manual transfer or reopening. The plugin
+uses its separate-chat handoff on a supported surface. Socrates alone claims the
+task and persists acknowledged specialist evidence.
 
-## Install and bind a project
+## Bind a project to a user-level release
 
 For a first installation from a development checkout, preview every write first:
 
@@ -331,9 +336,9 @@ launcher exposes these command groups:
 | Preview maintenance | `harness maintenance-preview <project> --task-id <task-id> --candidate <file> --json` | Check a project-local candidate against enabled policy; no files or commands are changed. |
 | Apply maintenance | `harness maintenance-apply <project> --task-id <task-id> --candidate <file> --json` | Apply one approved text edit after practical conflict checks; no external command or delivery is run. |
 
-Use `ai-agent-fabric --help` or a command's `--help` for the exact arguments. The
-development wrapper `python scripts/run-fabric.py` builds or inspects a release; bound
-projects use the global launcher instead. The [CLI operations guide](docs/cli.md)
+Use the launcher's `--help` for exact arguments. User-level bindings use the
+installed launcher. Project-only bindings use
+`python -I -S -B .agent-fabric/runtime/bin/ai-agent-fabric.py` from the target root. The [CLI operations guide](docs/cli.md)
 describes prerequisites, state changes, examples and next steps.
 
 ## Tasks, memory, and recovery
@@ -367,8 +372,9 @@ the specialist-result outbox. It is never shared with another project or the glo
 Fabric release.
 
 Socrates starts or reactivates a task session, records decisions and evidence, queues a
-delegation request, and acknowledges completed specialist results. Specialists do not
-receive a public write command for that store. The supported read/recovery commands are:
+delegation request, and acknowledges completed specialist results. Specialists use
+`memory submit-result` to enqueue a result for their own dispatched request. The
+supported read/recovery commands are:
 
 ```bash
 ai-agent-fabric memory restore /path/to/project --session <task-id> --json
@@ -420,10 +426,10 @@ next path is start, restore, or task selection.
 ## Delegation and the lifecycle
 
 ```text
-Socrates creates a request
+Socrates submits and dispatches a request
   -> specialist reads declared task artifacts
-  -> specialist returns a typed result to Socrates
-  -> Socrates records evidence and acknowledges the result
+  -> specialist submits a typed result to the project-local outbox
+  -> Socrates acknowledges the result into durable evidence
   -> immutable gate checks the required evidence labels
   -> Socrates chooses the next bounded action
 ```
@@ -445,13 +451,17 @@ new request
                                                  -> human approval
                                                  -> scoped implementation
                                                  -> Athena review -> validation
-                                                 -> evidence -> close-out -> rollout -> archive
+                                                 -> evidence -> close-out
+                                                 -> authorized rollout when required -> archive
 ```
 
 For planned work, Aristotle establishes evidence, Plato creates the bounded plan, and
 Kepler independently challenges it. Heracles implements only approved scope. Athena
 reviews changed work; Euclid validates only when the project enables that capability.
 Read the [portable workflow](docs/workflow.md) and [task specifications](docs/task-specs.md).
+The [project journal](docs/cli.md#project-journal-and-release-notes) records completed
+tasks from evidenced close-out facts. Select confirmed tasks explicitly to generate
+local versioned release notes.
 
 ## Harness: learning from agent friction
 
@@ -523,8 +533,8 @@ or unsupported rows rather than implied support. See the
 
 The current release defines Socrates as the orchestration role and durable-memory
 writer. `start --apply` prepares a task for a separate Socrates chat; the chat's
-explicit `socrates claim` activates its lifecycle. `restore` reopens the same chat
-when a binding exists. There is no standalone `start orchestrator` command.
+explicit `socrates claim` activates its lifecycle. `restore` returns the binding needed to
+reopen the same chat. There is no standalone `start orchestrator` command.
 
 ## Development
 
@@ -548,5 +558,8 @@ Before changing the runtime, read [AGENTS.md](AGENTS.md), then
 - [Guards](docs/guards.md)
 - [Gates](docs/gates.md)
 - [Client adapters](docs/agent-clients.md)
-- [Global distribution](docs/global-distribution.md)
+- [Project onboarding and existing-installation Git cleanup](docs/project-onboarding.md)
+- [Global distribution and updates](docs/global-distribution.md)
+- [CLI operations and release notes](docs/cli.md#project-journal-and-release-notes)
+- [Release history](CHANGELOG.md)
 - [Security and secret entry](docs/security/secret-entry.md)
