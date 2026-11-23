@@ -9,12 +9,13 @@ from typing import Any
 from .identifiers import is_safe_identifier
 
 from .project_state import state_path
+from .release_journal import capture_completion, output_baseline, verify_outputs
 from .task_specs import new_product_context, new_product_mvp_preview, package_path, workflow_steps
 
 
 SECRET_FIELD_MARKERS = {"token", "password", "secret", "apikey", "authorization", "credential", "privatekey"}
 CANONICAL_AGENTS = {"orchestrator", "explore", "plan", "opponent", "dev", "review", "validation", "maintenance"}
-MEMORY_SCHEMA_VERSION = 13
+MEMORY_SCHEMA_VERSION = 14
 SAFE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._/-]*$")
 SAFE_PATH_REFERENCE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
 SECRET_VALUE_PATTERNS = (
@@ -129,6 +130,19 @@ CREATE TABLE IF NOT EXISTS task_steps (
   closure_artifact TEXT,
   closure_reason TEXT,
   PRIMARY KEY(session_id, step_id)
+);
+CREATE TABLE IF NOT EXISTS project_journal (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  snapshot_json TEXT NOT NULL,
+  completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS journal_output_baselines (
+  request_id TEXT PRIMARY KEY REFERENCES delegation_requests(idempotency_key) ON DELETE CASCADE,
+  baseline_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS journal_contribution_proofs (
+  result_id TEXT PRIMARY KEY REFERENCES result_outbox(idempotency_key) ON DELETE CASCADE,
+  evidence_json TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS guard_trace_outbox (
   failure_key TEXT PRIMARY KEY REFERENCES guard_failures(idempotency_key) ON DELETE CASCADE,
@@ -283,7 +297,8 @@ def quarantined_results(project_root: Path) -> list[dict[str, Any]]:
 
 def _require_current_schema_connection(connection: sqlite3.Connection) -> None:
     tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    required_tables = {"sessions", "records", "delegation_requests", "result_outbox", "guard_failures", "guard_incidents", "guard_outcomes", "task_lifecycles", "task_steps", "guard_trace_outbox", "socrates_chats"}
+    required_tables = {"sessions", "records", "delegation_requests", "result_outbox", "guard_failures", "guard_incidents", "guard_outcomes", "task_lifecycles", "task_steps", "guard_trace_outbox", "socrates_chats",
+                       "project_journal", "journal_output_baselines", "journal_contribution_proofs"}
     if not required_tables.issubset(tables):
         raise ValueError("Project memory schema requires migration; run `memory init <project> --home <fabric-home>` explicitly")
     result_columns = {row["name"] for row in connection.execute("PRAGMA table_info(result_outbox)")}
@@ -351,7 +366,7 @@ def activate_task_lifecycle(
             chat = connection.execute(
                 "SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)
             ).fetchone()
-            active = _derive_task_action(connection, session_id) if chat is not None and chat["status"] == "claimed" else _initial_task_action(connection, session_id)
+            active = _derive_task_action(connection, session_id, project_root=project_root) if chat is not None and chat["status"] == "claimed" else _initial_task_action(connection, session_id)
             connection.execute(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (active["next_action"], active["status"], session_id),
@@ -403,14 +418,14 @@ def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> 
             if row["status"] == "claimed":
                 if row["thread_id"] != thread_id:
                     raise ValueError("Task is already claimed by a different Socrates chat")
-                action = _derive_task_action(connection, session_id)
+                action = _derive_task_action(connection, session_id, project_root=project_root)
                 return {"thread_id": thread_id, **action}
             connection.execute(
                 "UPDATE socrates_chats SET thread_id=?, status='claimed', claimed_at=COALESCE(claimed_at, CURRENT_TIMESTAMP) WHERE session_id=?",
                 (thread_id, session_id),
             )
             connection.execute("UPDATE sessions SET status='active', updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
-            action = _derive_task_action(connection, session_id)
+            action = _derive_task_action(connection, session_id, project_root=project_root)
             connection.execute("UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?", (action["next_action"], action["status"], session_id))
             connection.execute(
                 "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, 'socrates-chat-claimed', 'orchestrator', 'socrates-chat-claimed', ?)",
@@ -421,7 +436,7 @@ def claim_socrates_chat(project_root: Path, session_id: str, thread_id: str) -> 
         connection.close()
 
 
-def _derive_task_action(connection: sqlite3.Connection, session_id: str) -> dict[str, Any]:
+def _derive_task_action(connection: sqlite3.Connection, session_id: str, *, project_root: Path | None = None) -> dict[str, Any]:
     """Persist the only permitted post-transition state for one task lifecycle."""
     escalated = connection.execute(
         "SELECT 1 FROM guard_failures AS failure WHERE session_id=? AND status='escalated' "
@@ -457,6 +472,8 @@ def _derive_task_action(connection: sqlite3.Connection, session_id: str) -> dict
     step_position = next((index for index, item in enumerate(steps) if item["status"] not in {"done", "skipped"}), None)
     step = steps[step_position] if step_position is not None else None
     if step is None:
+        if project_root is not None:
+            capture_completion(connection, project_root, session_id)
         return {
             "next_action": "archive",
             "status": "completed",
@@ -532,6 +549,7 @@ def advance_task_step(
     try:
         _require_current_schema_connection(connection)
         with connection:
+            connection.execute("BEGIN IMMEDIATE")
             chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
             if chat is None or chat["status"] != "claimed":
                 raise PermissionError("task steps require a claimed separate Socrates chat")
@@ -558,7 +576,7 @@ def advance_task_step(
                     "UPDATE task_steps SET status=?, closure_artifact=?, closure_reason=? WHERE session_id=? AND step_id=?",
                     (status, closure_artifact, closure_reason, session_id, step_id),
                 )
-            active = _derive_task_action(connection, session_id)
+            active = _derive_task_action(connection, session_id, project_root=project_root)
             connection.execute(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (active["next_action"], active["status"], session_id),
@@ -794,6 +812,7 @@ def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str
     try:
         _require_current_schema_connection(connection)
         with connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT status, agent, session_id, payload_json FROM delegation_requests WHERE idempotency_key=?", (idempotency_key,)
             ).fetchone()
@@ -814,6 +833,11 @@ def mark_request_dispatched(project_root: Path, idempotency_key: str, actor: str
                         "idempotency key after recording the exact owner decision; no duplicate owner approval."
                         .format(**diagnostic)
                     )
+            baseline = output_baseline(project_root, json.loads(row["payload_json"]))
+            connection.execute(
+                "INSERT INTO journal_output_baselines(request_id, baseline_json) VALUES (?, ?)",
+                (idempotency_key, json.dumps(baseline, sort_keys=True)),
+            )
             connection.execute(
                 "UPDATE delegation_requests SET status='dispatched', dispatched_at=CURRENT_TIMESTAMP WHERE idempotency_key=?",
                 (idempotency_key,),
@@ -862,6 +886,7 @@ def acknowledge_result(project_root: Path, idempotency_key: str, actor: str = "o
     try:
         _require_current_schema_connection(connection)
         with connection:
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT session_id, agent, payload_json, status FROM result_outbox WHERE idempotency_key=?", (idempotency_key,)
             ).fetchone()
@@ -872,6 +897,21 @@ def acknowledge_result(project_root: Path, idempotency_key: str, actor: str = "o
             if row["status"] == "acknowledged":
                 return False
             payload = json.loads(row["payload_json"])
+            baseline = connection.execute(
+                "SELECT request.payload_json, baseline.baseline_json FROM delegation_requests AS request "
+                "JOIN journal_output_baselines AS baseline ON baseline.request_id=request.idempotency_key "
+                "WHERE request.idempotency_key=? AND request.status='dispatched' AND request.session_id=? AND request.agent=?",
+                (payload["request_id"], row["session_id"], row["agent"]),
+            ).fetchone()
+            if baseline is not None and any("sha256" in artifact for artifact in payload["artifacts"]):
+                outputs = verify_outputs(
+                    project_root, payload, json.loads(baseline["payload_json"]), json.loads(baseline["baseline_json"]),
+                )
+                if outputs:
+                    connection.execute(
+                        "INSERT INTO journal_contribution_proofs(result_id, evidence_json) VALUES (?, ?)",
+                        (idempotency_key, json.dumps(outputs, sort_keys=True)),
+                    )
             connection.execute(
                 "INSERT INTO records(session_id, kind, actor, summary, evidence_json) VALUES (?, ?, ?, ?, ?)",
                 (row["session_id"], "agent-result", actor, payload["summary"], row["payload_json"]),
@@ -999,6 +1039,7 @@ def _persist_guard_failure(
     try:
         _require_current_schema_connection(connection)
         with connection:
+            connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT failure.idempotency_key, failure.session_id, failure.incident_id, failure.taxonomy, failure.guard, failure.evidence_artifact, "
                 "failure.policy, failure.status, outcome.idempotency_key AS outcome_key, outcome.outcome, outcome.attempt "
@@ -1007,7 +1048,7 @@ def _persist_guard_failure(
                 (idempotency_key,),
             ).fetchone()
             if existing is not None:
-                action = _derive_task_action(connection, session_id)
+                action = _derive_task_action(connection, session_id, project_root=root)
                 connection.execute(
                     "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                     (action["next_action"], action["status"], session_id),
@@ -1057,7 +1098,7 @@ def _persist_guard_failure(
                 ),
             )
             connection.execute("UPDATE sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
-            action = _derive_task_action(connection, session_id)
+            action = _derive_task_action(connection, session_id, project_root=root)
             connection.execute(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (action["next_action"], action["status"], session_id),
@@ -1095,6 +1136,7 @@ def resolve_guard_failure(
     try:
         _require_current_schema_connection(connection)
         with connection:
+            connection.execute("BEGIN IMMEDIATE")
             chat = connection.execute("SELECT status FROM socrates_chats WHERE session_id=?", (session_id,)).fetchone()
             if chat is None or chat["status"] != "claimed":
                 raise PermissionError("Guard resolution requires a claimed separate Socrates chat")
@@ -1120,7 +1162,7 @@ def resolve_guard_failure(
                     (session_id, json.dumps({"failure_key": failure_key, "guard": failure["guard"], "incident_id": failure["incident_id"], "owner_direction": owner_direction.strip(), "evidence_artifact": evidence_artifact}, ensure_ascii=False, sort_keys=True)),
                 )
                 connection.execute("UPDATE sessions SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (session_id,))
-            action = _derive_task_action(connection, session_id)
+            action = _derive_task_action(connection, session_id, project_root=root)
             connection.execute(
                 "UPDATE task_lifecycles SET next_action=?, status=? WHERE session_id=?",
                 (action["next_action"], action["status"], session_id),
@@ -1242,7 +1284,12 @@ def _valid_result_items(result: dict[str, Any]) -> bool:
     if not all(isinstance(items, list) for items in (artifacts, findings, decisions)):
         return False
     return (
-        all(isinstance(item, dict) and set(item) == {"path"} and _safe_path_reference(item["path"]) for item in artifacts)
+        all(
+            isinstance(item, dict) and set(item) in ({"path"}, {"path", "sha256"})
+            and _safe_path_reference(item["path"])
+            and ("sha256" not in item or isinstance(item["sha256"], str) and bool(re.fullmatch(r"[a-f0-9]{64}", item["sha256"])))
+            for item in artifacts
+        )
         and all(_valid_index_item(item) for item in findings)
         and all(_valid_index_item(item) for item in decisions)
     )

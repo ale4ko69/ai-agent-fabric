@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project-local task close-out facts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "changes", "checks"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "evidence"],
+        "properties": {
+          "summary": {"$ref": "#/$defs/text"},
+          "evidence": {"$ref": "#/$defs/evidence", "minItems": 1}
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "outcome", "reason", "evidence"],
+        "properties": {
+          "name": {"$ref": "#/$defs/text"},
+          "outcome": {"enum": ["passed", "failed", "skipped", "unknown"]},
+          "reason": {"$ref": "#/$defs/text"},
+          "evidence": {"$ref": "#/$defs/evidence"}
+        },
+        "if": {"properties": {"outcome": {"enum": ["passed", "failed"]}}},
+        "then": {"properties": {"evidence": {"minItems": 1}}}
+      }
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "pattern": "\\S"},
+    "evidence": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$"}
+    }
+  }
+}

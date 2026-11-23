@@ -218,6 +218,45 @@ Already-dispatched work is not cancelled or restarted by this queued-request gua
 | `spec attest-chat-approval <project> <task-id> ...` | Exact reviewed package and explicit owner chat decision; records an agent assertion, not independently authenticated identity. | Recheck readiness. |
 | `spec archive <project> <task-id> --reason <reason>` | Valid package; moves it to the local archive. For lifecycle close-out, use `socrates archive`. | Verify the archive record. |
 
+### Project journal and release notes
+
+Before the final lifecycle transition completes, Socrates records factual changes
+and check outcomes in `close-out.json` in the task package. Use the
+`schemas/close-out-facts.schema.json` contract. All evidence references in the facts
+file are relative to the package.
+
+```json
+{
+  "schema_version": 1,
+  "changes": [
+    {"summary": "Added a report filter", "evidence": ["evidence/implementation.md"]}
+  ],
+  "checks": [
+    {"name": "Unit suite", "outcome": "skipped", "reason": "Not requested", "evidence": []}
+  ]
+}
+```
+
+Use `passed` and `failed` with a reference to the observed result. Use `skipped`
+or `unknown` with a reason when execution or its outcome cannot be established.
+Fabric validates evidence paths and records their digests. Invalid or missing
+facts prevent completion and can be corrected before retrying. A task's entry
+survives archive and includes only locally verified specialist contributions.
+
+Run `project journal <project> --json` to read the captured entries. To assemble
+notes, run `project release-notes <project> --version 1.2.0 --task first-task --task second-task`.
+The operation writes one local file at
+`.agent-fabric/release-notes/whats-new-1.2.0.md`. Select each included task
+explicitly. Tasks completed before journal capture was available can be viewed
+through their existing history and are ineligible for this operation.
+
+Versions use 1–64 ASCII letters and digits, with optional dot or hyphen separators
+between groups. Filenames and headers use the lowercase version. The command
+requires a filesystem supporting atomic hard-link creation. Identical input can
+be replayed. An existing file with different bytes produces a conflict. Closing a
+task records its journal entry. Creating release notes and publishing them are
+separate actions.
+
 ## Memory, Guards and Harness
 
 `memory init` writes project-local memory; `memory restore`, `memory quarantine`,

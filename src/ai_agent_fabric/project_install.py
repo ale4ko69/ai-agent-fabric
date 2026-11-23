@@ -371,7 +371,7 @@ def restrict_runtime_command(args: Any, project_root: Path) -> None:
         "recover-unicode-package", "memory", "guards", "socrates", "secret", "spec", "harness", "project",
     }
     if args.command not in allowed or (
-        args.command == "project" and args.project_command not in {"status", "context", "command-preview", "codex-install", "codex-status"}
+        args.command == "project" and args.project_command not in {"status", "context", "command-preview", "codex-install", "codex-status", "journal", "release-notes"}
     ):
         raise ValueError("Project runtime launcher cannot dispatch installation or distribution commands")
     if hasattr(args, "target"):
