@@ -61,9 +61,26 @@ For each host, verify only these lifecycle operations in order:
    symlink produces controlled `invalid`/error status without a write outside the
    target.
 
-## Release delivery chain
+## Project-only checks
 
-Before declaring a Fabric release delivered, verify this complete ordered chain. A
+Use a disposable target for each approved validation case. Preview and apply the
+runtime install with reviewed source. Verify the pinned launcher and immutable release
+through `project context`. Where native links are available, separately preview and
+apply the Codex adapter and inspect `project codex-status`.
+
+For Git cases, compare status, index and tracked contract bytes before and after
+the runtime and adapter stages. Check that generated paths are effectively ignored,
+unrelated paths retain their original visibility, and preexisting local ignore rules
+are preserved. Exercise an existing project-only installation through the Git cleanup
+preview and verify that its binding, release, memory and task packages stay intact.
+Cover preexisting exclusions, tracked or staged generated artifacts, stale previews,
+conflicting rules, linked worktrees, submodules and non-Git targets. Record results
+per layout. Use the [live Desktop procedure](using-fabric.md#project-local-codex-next-machine-validation)
+for actual discovery and claim/restore evidence.
+
+## User-level release delivery chain
+
+Before declaring a user-level Fabric release delivered, verify this complete ordered chain. A
 passing source test suite is necessary but does not replace any delivery check.
 
 ```text

@@ -28,8 +28,8 @@ On the next computer, with a reviewed fresh runtime and explicit owner approval:
    junction, copy, elevation or global-config workaround is silently authorized.
 3. Open/trust that exact project in Desktop using its real UI. Observe all eight
    personas (`socrates`, `aristotle`, `plato`, `kepler`, `heracles`, `athena`, `euclid`,
-   `metis`) and the `agent-fabric-project` skill. Check the content/targets, not
-   merely names. If they are hidden or ignored, record which links the app cannot
+   `metis`) and both `agent-fabric-project` and `agent-fabric-new-product` skills.
+   Check the content and targets. If they are hidden or ignored, record which links the app cannot
    observe, the build and any actual error; stop instead of claiming support.
    Project/config-layer discovery in the pinned upstream code does not prove that
    the installed Desktop build exposes the same surface.
@@ -56,20 +56,24 @@ Record live evidence separately for file installation, app discovery, and genuin
 claim/restore. Automated tests use fixture IDs and cannot supply that evidence.
 No automatic promotion of the adapter record to “Desktop verified” is implemented.
 
-## The three states that must not be confused
+## Source, installation and project binding
 
 ```mermaid
 flowchart LR
-    source["Source branch\nnew code and documentation"] --> install["Installed Fabric release\nimmutable version in Fabric home"]
-    install --> binding["Project binding\nproject chooses one installed release"]
-    binding --> task["Task lifecycle\nSocrates, checklist, memory"]
+    source["Reviewed source"]
+    source -->|install-release| shared["Versioned user-level Fabric home"]
+    shared -->|init or update-project| binding["Project binding to a user-level release"]
+    source -->|project install| local["Pinned release and binding inside the project"]
+    local -->|optional codex-install| adapter["Local Codex links"]
+    binding --> task["Task lifecycle in the bound project"]
+    local --> task
 ```
 
-Changing or pushing a source branch does not change an installed release. Installing a
-release does not change existing projects. A project begins using a release only after
-its binding is explicitly updated. Use `project context <project> --json` to see the
-release currently selected by that project; use the installer preview before any
-installation or binding update.
+A source change takes effect in an installed release only after an explicit
+installation. In user-level mode, an existing project keeps its pin until explicitly
+updated. In project-only mode, installation creates the local pin and scoped
+launcher. Git cleanup keeps that pin in place. Use `project context <project> --json`
+with the appropriate launcher to inspect the selected release.
 
 ## Starting or returning to work
 
@@ -82,15 +86,19 @@ flowchart TD
     work["work project"] --> count{Active task packages?}
     count -->|0| intake["Ask for title and work class"]
     intake --> start["start --apply\ncreates package and Socrates-chat request"]
-    start --> chat["Root creates or reopens\nthe separate Socrates chat"]
-    chat --> claim["Socrates claims task id\nwith its chat thread id"]
+    start --> handoff{"Entry path"}
+    handoff -->|project-only Codex| manual["Owner manually creates or reopens the separate chat"]
+    handoff -->|supported Codex plugin| plugin["Root follows the plugin handoff"]
+    manual --> chat["Separate Socrates chat"]
+    plugin --> chat
+    chat --> claim["Claim with real thread ID or resume the saved binding"]
     count -->|1| one["Show the task and restore it"]
     count -->|2 or more| list["Show numbered list:\nnumber, title, task id, work class"]
     list --> choice["You choose number, title, or task id"]
     choice --> restore["restore exact task id"]
     one --> restore
     restore --> packet["Return checklist, chat binding, evidence,\npending results, Guards and memory"]
-    packet --> chat
+    packet --> handoff
 ```
 
 You do not need to remember ids. `restore` without an argument shows every active task
@@ -103,8 +111,9 @@ starts only when the Fabric skill invokes `start ... --apply`. This is intention
 prevents a casual sentence from creating project state.
 
 `start --apply` does not prove that Socrates is live. It creates a pending chat claim.
-Root creates the separate Socrates chat, delivers the returned activation packet, and
-does not continue the task. `restore` does not execute the next step or run a project
+Root transfers the activation packet. On the project-only Codex path the owner
+creates or reopens the separate Desktop chat manually. On the plugin path Root
+follows the entry skill for that surface. Only the separate chat does task work. `restore` does not execute the next step or run a project
 command. It reconstructs the chosen task packet and returns the bound chat id when one
 exists, so Root can reopen that exact chat. Socrates claims the task and then reads its
 `next_action` before doing work. A completed checklist step remains completed; a
@@ -117,8 +126,8 @@ Socrates is the project-local orchestration role, not a background daemon. A tas
 one durable Socrates lifecycle in its project-local memory and one visible, claimed
 Socrates chat. It owns task transitions, delegation records, Guard outcomes, and
 Harness signals. Specialists return bounded results and evidence artifacts; they do
-not choose retry policy or persist project memory. Root opens that chat and remains an
-entry/recovery coordinator; it is not Socrates and must not create specialist chats.
+not choose retry policy or persist project memory. Root coordinates entry and recovery. The separate claimed Socrates
+chat dispatches specialist work.
 
 ## Guards: what happens after an error
 

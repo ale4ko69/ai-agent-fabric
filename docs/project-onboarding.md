@@ -3,7 +3,7 @@
 ## Project-only runtime
 
 No global Fabric or client adapter is required for this mode. From the selected,
-reviewed source checkout, use an existing target with no `.agent-fabric` entry:
+reviewed source checkout, use an existing target:
 
 ```bash
 python -I -S -B scripts/run-fabric.py project install /path/to/project --source . --client codex --preview --json
@@ -11,23 +11,56 @@ python -I -S -B scripts/run-fabric.py project install /path/to/project --source 
 python -I -S -B /path/to/project/.agent-fabric/runtime/bin/ai-agent-fabric.py project context /path/to/project --json
 ```
 
-Review the exact files, directories and possible SQLite sidecars in the preview.
-The digest covers source contents, target identity, selected mode/client and the
-write inventory. If anything changes, obtain a fresh preview rather than guessing
-a replacement digest. Preview never opens SQLite or creates state. Apply creates
-the current database schema only in a new target state tree; it does not migrate
-an existing project.
+Review the files, directories, possible SQLite sidecars and Git-local exclusions.
+An existing contract-only target must have the six compatible regular files: the
+binding, profile, overlay and three configuration files. The binding must select the
+same client and release. Fabric preserves the existing contract bytes and creates
+only the missing installation state. Ambiguous, incompatible or occupied generated
+paths block installation. Obtain a fresh preview if the inputs change.
+
+At a Git worktree root, Fabric excludes its generated installation state with
+escaped, anchored rules for individual generated files and link paths after
+installation ownership is complete. Editable contracts and task packages keep
+their existing Git visibility. Generated paths already tracked or staged, user rules that override the
+exclusions, and an exclusion write shared by linked worktrees each require owner
+review before installation can proceed. A non-Git target proceeds without Git writes.
+See [Git policy](global-distribution.md#project-only-git-policy).
 
 The runtime, release registry, launcher, ownership, binding, configuration and memory
-all stay under `.agent-fabric`. No user-level client files, native repository
-instructions, plugin, hooks or role renderer are installed. Client activation is
-**none**, not Codex Desktop support or a Socrates handoff. Inspecting context through
-the explicit local launcher is the supported entry point.
+stay under `.agent-fabric`. The release contains dormant Codex personas and both
+project skills. Client activation is **none**. For Codex Desktop, follow the
+[separate adapter preview and apply](cli.md#separate-project-codex-adapter)
+through the pinned launcher, then check file installation and Desktop evidence
+separately.
 
 The local launcher cannot target another project, change home, install a release,
-enable a client or bootstrap host software. There is no global fallback. An existing
-or interrupted `.agent-fabric` tree must be inspected manually; this command will
-not merge, replace, repair or remove it. See [runtime ownership and boundaries](global-distribution.md#project-only-runtime).
+enable a user-level client or bootstrap host software. If installation reports
+that its final receipt was published but Git exclusion publication failed, use the
+cleanup preview below. Inspect remaining paths and receipts when installation
+ownership is incomplete. See [runtime ownership](global-distribution.md#project-only-runtime).
+
+## Git cleanup for an existing project-only installation
+
+Use a trusted source checkout that implements Git cleanup, including for a target
+whose older pinned launcher predates this command. The target must already have an
+intact project-only release, launcher and runtime receipt. Cleanup covers
+adapter paths when it verifies a completed adapter. Pending or invalid ownership
+and edited launcher files require inspection of the reported paths. If you add an
+adapter later through an older pinned launcher, preview cleanup again to cover the
+newly installed links.
+
+```bash
+python -I -S -B scripts/run-fabric.py project git-cleanup /path/to/project --preview --json
+python -I -S -B scripts/run-fabric.py project git-cleanup /path/to/project --apply --expected-preview-sha256 <preview_sha256> --json
+```
+
+Compare the previewed paths with the installation receipts and your existing Git
+rules before applying. The cleanup preserves the pinned release, memory, task
+packages, binding, tracked settings and index. It only adds effective local Git
+exclusions where safe. An already-covered installation needs no exclusion write.
+If Git already tracks a generated path, the preview reports the conflict. Review
+the index and file yourself before deciding how to resolve it. Cleanup never
+untracks or resets files for you.
 
 ## Onboarding from a global Fabric
 
@@ -146,5 +179,5 @@ project overlay. An existing `.agent-fabric` directory alone does not cause a st
 the initializer preserves existing profile and config files and may initialize or
 migrate local memory. Inspect partial state and the preview before choosing whether to
 continue. Existing bound projects use the update/rollback lifecycle.
-This preservation behaviour belongs to `project init`, not `project install`, which
-refuses every pre-existing `.agent-fabric` entry.
+This is the user-level binding lifecycle. The project-only path above uses a
+separate contract compatibility check and a separate Git cleanup command.

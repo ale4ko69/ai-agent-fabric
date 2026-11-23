@@ -15,6 +15,7 @@ from .project_install import (
     DIGEST_PATTERN, _check_path, _digest, _json_bytes, _portable_component,
     _write_new, checked_directory, load_project_installation,
 )
+from .project_git import apply_project_git_plan, project_git_plan
 
 
 CODEX_REVISION = "d52a39b307b77e81cd272d08189341d944542b82"
@@ -96,6 +97,10 @@ def _links(version: str) -> list[dict[str, str]]:
             (".agents/skills/agent-fabric-new-product", "skills/new-product"),
         )
     ]
+
+
+def adapter_git_paths(version: str) -> list[str]:
+    return [RECEIPT, PENDING, *(link["path"] for link in _links(version))]
 
 
 def _runtime(target: str | Path) -> tuple[Path, dict[str, Any], str]:
@@ -184,6 +189,7 @@ def _plan(target: str | Path) -> dict[str, Any]:
         "detected_clients": list(detected.candidates),
         "directories": sorted(directories), "files": [RECEIPT], "links": links,
         "transient_paths": [PENDING],
+        "git": project_git_plan(project, environment, adapter_git_paths(runtime["fabric_release"])),
         "desktop_discovery": "unverified", "claim_restore": "unverified",
     }
     plan["preview_sha256"] = _digest(plan)
@@ -234,7 +240,7 @@ def install_codex_project(target: str | Path, *, expected_preview_sha256: str) -
         raise ValueError("Codex project preview digest is stale or invalid; review a fresh preview")
     project = Path(plan["project_root"])
     record = {key: value for key, value in plan.items() if key not in {
-        "existing_directories", "environment", "detected_clients", "files", "transient_paths",
+        "existing_directories", "environment", "detected_clients", "files", "transient_paths", "git",
     }}
     validate_codex_project_installation(record)
     pending_data = _json_bytes(record)
@@ -263,6 +269,15 @@ def install_codex_project(target: str | Path, *, expected_preview_sha256: str) -
             f"Inspect {PENDING} and any created paths manually. No copy, junction or elevation fallback was attempted. "
             "Desktop discovery and claim/restore remain unverified."
         ) from error
+    def verify_ownership() -> None:
+        report = codex_project_status(project)
+        if report["file_installation"] != "installed" or (project / RECEIPT).read_bytes() != pending_data:
+            raise ValueError(f"Codex adapter ownership changed during Git publication: {report}")
+
+    try:
+        apply_project_git_plan(project, detect_environment(), plan["git"], verify_ownership=verify_ownership)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"Codex adapter ownership receipt was published; review project git-cleanup: {error}") from error
     return {**plan, **codex_project_status(project)}
 
 

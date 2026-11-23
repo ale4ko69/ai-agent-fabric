@@ -7,14 +7,16 @@ bootstrap for the selected client. A project binding supplies its local overlay.
 The table below describes user-level adapter mode. Explicit `project install
 --client codex` installs a **runtime only**, with `client_activation: none` and no
 adapter manifest in its context (`adapter_manifest: null`). Dormant persona TOMLs and
-the project-entry skill are prepared inside the pinned release, not activated in a
+the project-entry and New Product skills are prepared inside the pinned release, not activated in a
 client. It writes no user/global client configuration, native project instructions,
 hooks or Desktop plugin. It does not create/reopen a Socrates chat.
 
 A separate `project codex-install` preview/apply, available only through the scoped
 launcher, installs relative native symlinks for `socrates`, `aristotle`, `plato`,
-`kepler`, `heracles`, `athena`, `euclid` and `metis` under `.codex/agents`, plus
-`.agents/skills/agent-fabric-project`. The TOMLs contain `name`, `description` and
+`kepler`, `heracles`, `athena`, `euclid` and `metis` through the
+`.codex/agents` directory link. The other two links expose
+`.agents/skills/agent-fabric-project` and `.agents/skills/agent-fabric-new-product`.
+The TOMLs contain `name`, `description` and
 `developer_instructions` from the pinned canonical profiles and their readable
 companions; they do not choose a model, elevate sandbox permissions or grant task
 authority. The Socrates persona explicitly refuses task claiming when invoked as a
@@ -22,8 +24,9 @@ native subagent.
 
 Any existing `.codex` entry blocks installation, including an empty directory.
 Existing config, instructions or agents are never merged, rewritten or claimed.
-Other ordinary project skill directories may coexist, but the selected entry must be
-absent. No global config, copy, junction, plugin or elevation fallback is attempted.
+Other ordinary project skill directories may coexist. Both selected link names must
+be absent. Git-local exclusions cover the installed links and ownership receipts
+where the [Git policy](global-distribution.md#project-only-git-policy) permits them. No global config, copy, junction, plugin or elevation fallback is attempted.
 Inspect `project codex-status`: `file_installation` is separate from
 `desktop_discovery: unverified` and `claim_restore: unverified`. A broken/replaced link
 reports `invalid`; an interrupted install retains pending ownership for manual

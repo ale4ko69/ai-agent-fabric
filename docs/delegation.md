@@ -5,10 +5,10 @@ database. It is idempotent and contains identifiers and artifact references, not
 copied prompt, secret, tracker payload, or another project's context.
 
 ```text
-Socrates -> delegation_requests (project-local, pending)
-        -> selected specialist reads declared task artifacts
-        -> result_outbox (project-local, pending)
-        -> Socrates acknowledges result into durable memory
+claimed Socrates submits request -> pending request
+claimed Socrates dispatches      -> specialist reads scope and inputs
+specialist submits result        -> pending result in project-local outbox
+claimed Socrates acknowledges    -> durable memory record and task evidence
 ```
 
 ## Request envelope
@@ -36,22 +36,84 @@ references to artifacts, findings, and decisions. A specialist may submit it to 
 local outbox, but only Socrates can acknowledge it into the memory record. Both
 envelopes reject secret-like keys and common credential formats before persistence.
 
-For project journal attribution, declare a concrete project-relative output in
-`required_outputs` and cite it in the result's `artifacts` array with its lowercase
-SHA-256 as `sha256`. Use a separate evidence file when multiple requests will edit
-the same main output. Fabric records the output's initial digest or absence on the
-first dispatch. On acknowledgement it checks that the digest matches the current
-file and differs from the baseline, and that the output is distinct from the
-request's input and scope files. It checks that proof again on task completion.
-If multiple requests claim the same output and bytes, including through aliases
-of the same file, that evidence does not establish which request made the
-contribution. Use distinct outputs to establish each contribution.
-Existing result envelopes with path-only artifacts are still supported.
+## Exchange a result
 
-Use the pinned launcher to run `memory submit-result` for a specialist response.
-Socrates uses `socrates submit-request`, `socrates dispatch-request` and
-`socrates acknowledge-result` with the task session and its claimed thread ID.
-See [CLI operations](cli.md#memory-guards-and-harness).
+Use the launcher for the project's pinned release. Examples use
+`<launcher>` for that selected entry point and a single JSON argument wherever
+`--request` or `--result` appears. For a project-only installation, run the
+pinned local launcher from the verified project root.
+
+1. Claimed Socrates defines the objective, scope and required evidence in the
+   task package. It submits the request and dispatches it by request key.
+
+   ```json
+   {
+     "idempotency_key": "checklist-discovery",
+     "session_id": "offline-checklist",
+     "agent": "explore",
+     "task_id": "offline-checklist",
+     "scope_artifact": "docs/specs/active/offline-checklist/spec.md",
+     "input_artifacts": ["docs/specs/active/offline-checklist/spec.md"],
+     "required_outputs": ["docs/specs/active/offline-checklist/evidence/discovery.md"]
+   }
+   ```
+
+   ```text
+   <launcher> socrates submit-request <project> --session offline-checklist --thread-id <claimed-thread-id> --request <request-json> --json
+   <launcher> socrates dispatch-request <project> --session offline-checklist --thread-id <claimed-thread-id> --key checklist-discovery --json
+   ```
+
+2. The selected specialist reviews the declared inputs and returns the requested
+   evidence within its role. For example, a read-only explorer returns findings
+   for the coordinator to record in the declared evidence file before the
+   explorer submits its result. Use the same technical role, session and request
+   key, and a distinct result key.
+
+   ```json
+   {
+     "idempotency_key": "checklist-discovery-result",
+     "request_id": "checklist-discovery",
+     "session_id": "offline-checklist",
+     "agent": "explore",
+     "summary": "Mapped the local persistence options and recorded the constraints.",
+     "artifacts": [{"path": "docs/specs/active/offline-checklist/evidence/discovery.md"}],
+     "findings": [],
+     "decisions": []
+   }
+   ```
+
+   ```text
+   <launcher> memory submit-result <project> --result <result-json> --json
+   ```
+
+3. Socrates checks the returned evidence and acknowledges the result by **result**
+   key. The acknowledgment persists the result in project-local memory and
+   updates the session. Use `memory pending-requests`, `memory pending-results`
+   or `restore` to inspect interrupted work before retrying. Advance a step
+   only when its actual evidence is present.
+
+   ```text
+   <launcher> socrates acknowledge-result <project> --session offline-checklist --thread-id <claimed-thread-id> --key checklist-discovery-result --json
+   ```
+
+## Verify artifact contributions
+
+The path-only example is compatible with releases such as `0.1.31`, whose
+validator accepts only the `path` field on artifacts. Record an independently
+checked digest in task evidence when using such a release. This gives the
+reviewer a reproducible file identity. Releases with project-journal attribution
+also accept a lowercase SHA-256 in the artifact's `sha256` field and verify
+contributions through the lifecycle.
+
+For journal attribution, declare a concrete project-relative output in
+`required_outputs`. Use distinct outputs when multiple requests affect the
+same main file. The current journal implementation captures the output's
+initial digest or absence at first dispatch. On acknowledgment it checks that
+the digest matches the artifact on disk, differs from the baseline, and that
+the resolved output is distinct from the request's inputs and scope. Completion
+checks the proof again. Multiple requests claiming the same output bytes,
+including through aliases, do not establish distinct contributions. See
+[project journal and release notes](cli.md#project-journal-and-release-notes).
 
 Every agent authorized to edit files inspects their current state before an edit and
 preserves the owner's and other agents' changes. When the intended edit conflicts with

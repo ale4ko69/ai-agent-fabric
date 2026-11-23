@@ -132,7 +132,7 @@ evidence under `docs/specs/` are also project source material and are committed.
 Local operational state is not committed: `.agent-fabric/memory.db` and its SQLite
 sidecars, `.agent-fabric/harness/`, and `.agent-fabric/backups/`. These files contain
 machine-local runtime history, retrospective traces, or recoverable update copies;
-they are excluded by the repository's `.gitignore`. Initializing or updating a project
+use the repository's reviewed ignore policy for these artifacts. Initializing or updating a project
 may create both categories, but only the reproducible configuration and task artifacts
 belong in version control.
 
@@ -143,15 +143,17 @@ belong in version control.
 | `distribution install-release` | Install a versioned common Fabric release | Only the chosen Fabric home |
 | `distribution enable-client` | Connect a client’s user-level entry point to the selected release | Only the explicitly approved client configuration location and installer manifest |
 | `project init` | Create a project overlay and pin a release | Only the target repository |
-| `project install` | Install a runtime-only release in an existing fresh target | Only the target's `.agent-fabric`; no client activation |
+| `project install` | Install a pinned local runtime in a fresh target or reuse compatible existing contracts | Generated project state, any new contracts and applicable Git-local exclusions |
+| `project codex-install` | Add the optional local Codex adapter through the pinned launcher | Project links, adapter receipts and applicable Git-local exclusions |
+| `project git-cleanup` | Apply reviewed exclusions to a validated existing project-only installation | Applicable Git-local exclusions |
 | `distribution update-project` | Move one project to a reviewed compatible release | Only its binding and declared migration artifacts |
 | `distribution rollback-project` | Restore a reviewed previous project binding | Only its binding and a new recoverable backup |
 | `distribution rollback-client` | Restore the preceding installer-owned client artifact | Only the selected client entry point and its ownership record |
 | `distribution uninstall-client` | Remove an adapter owned by this installer | Only manifest-owned client artifacts |
 
 No command may switch from project installation or binding to user-level installation implicitly.
-Every release, project-binding, and client-adapter mutation has a preview; ownership
-records and backups make replacement, rollback, and uninstall reversible.
+These operations have separate previews. The user-level lifecycle uses ownership
+records and backups for supported replacement, rollback and uninstall.
 
 `<fabric-home>/bin/ai-agent-fabric` is the single global Bash launcher. It reads the
 current release from `installation.json` and delegates to that release's immutable
@@ -254,8 +256,8 @@ change detection, not a signature or a sandbox.
 ```
 
 Runtime source, contracts, schemas and documentation are copied. The release also
-retains the existing Bash secret-entry helper, the governed project-entry skill and
-once-rendered dormant Codex persona TOMLs. It omits global client delivery, plugins,
+retains the Bash secret-entry helper, the governed project-entry and New Product
+skills and generated dormant Codex persona TOMLs. It omits global client delivery, plugins,
 hooks, legacy global workflow skills, source installer scripts and global launchers.
 No repository-native instruction file or user/global client file
 is written. `project context` reports `adapter_manifest: null` and
@@ -301,23 +303,50 @@ all `distribution` and `bootstrap` commands, and `project init/install`. Environ
 overrides cannot select a global home or another release. Ordinary user-level
 installation, adapters and launchers retain their existing behaviour.
 
-Preview enumerates every file and directory relative to the target, plus possible
-`memory.db-journal`, `memory.db-wal` and `memory.db-shm` sidecars. No staging files or
-JSON replacement temporaries are needed. Apply rebuilds the source snapshot and
-preview digest before creating state. Any pre-existing `.agent-fabric` entry,
-including an empty directory or dangling link, blocks both preview and apply.
-Missing targets, traversal, links/reparse points in selected paths, hard-linked input
-files and ownership conflicts fail closed. The new state tree is private; writes
-are exclusive rather than replacements. This is not a sandbox against another
-process running as the same owner.
+Preview enumerates project-relative files and directories, any preserved compatible
+contracts, possible SQLite sidecars and the Git exclusion plan. Apply rechecks the
+source snapshot, target identity and Git inputs before creating state. A
+contract-only target must have compatible binding, profile, overlay and configuration
+files. Existing generated paths and unsafe or ambiguous ownership are conflicts.
+Installation creates generated files exclusively and preserves compatible
+contracts byte for byte. Both runtime and adapter installation publish any new
+Git exclusions after the final receipt is in place and ownership checks pass.
+If Git publication fails after completion of the receipt, review a fresh
+`project git-cleanup` preview against that installation. If the installation
+is incomplete, inspect the remaining files and receipts before recovery.
 
-Ownership is published last. An interrupted install is intentionally left for manual
-inspection and cannot be overwritten by retry. There is no project-only
-update/rollback/uninstall lifecycle in this version. Runtime state and its SQLite
-sidecars should not be committed; no `.gitignore` or other file outside
-`.agent-fabric` is edited by this installer.
+### Project-only Git policy
+
+At the root of a supported Git worktree, Fabric uses escaped, anchored rules
+in Git's local `info/exclude`. The runtime inventory lists each generated file
+under `.agent-fabric/runtime/` individually, plus its receipt, `memory.db` and
+the exact `-journal`, `-wal` and `-shm` sidecars. The adapter inventory lists the
+three exact link paths and its pending and final receipts. These rules leave
+unrelated files under the runtime directory, editable project contracts, task
+packages, sibling skills and existing user changes subject to their prior Git
+rules.
+
+The preview accounts for existing effective rules, tracked and staged generated
+paths, and the scope of the exclusion file. Existing effective rules can be reused.
+A tracked or staged conflict, higher-precedence rule that prevents a safe exclusion,
+or proposed change to a shared linked-worktree exclusion file stops the operation.
+A supported submodule uses its own Git metadata. A non-Git target needs no exclusion
+write. Fabric preserves existing exclusion bytes, tracked settings, the index and
+tracked ignore files.
+
+Owners of an intact earlier project-only installation can use the
+[Git cleanup preview and apply](project-onboarding.md#git-cleanup-for-an-existing-project-only-installation)
+from a trusted checkout implementing the command. Cleanup preserves the release,
+binding, database and tasks in place. An edited launcher or tracked artifact
+in the generated scope requires inspection. For an older pinned release, repeat
+cleanup after installing its adapter if the previous cleanup covered the runtime alone.
 
 ## Update policy
+
+These update, rollback and repair operations apply to projects bound to the
+user-level distribution. A project-only installation has no supported release
+update, rollback or uninstall command. Git cleanup is an independent operation
+that keeps the same project-only release.
 
 1. A new Fabric version is installed beside existing releases.
 2. Its immutable release manifest declares the exact local-memory schema and minimum

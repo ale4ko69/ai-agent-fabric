@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "assets": [
-    ".codex-plugin", "hooks", "README.md", "pyproject.toml", "release-source.json",
+    ".codex-plugin", "hooks", "README.md", "CHANGELOG.md", "pyproject.toml", "release-source.json",
     "src", "core", "schemas", "scripts", "skills", "docs/agents",
     "docs/architecture.md", "docs/agent-clients.md", "docs/client-adapter-evidence.md",
     "docs/cli.md", "docs/delegation.md", "docs/execution-policy.md", "docs/gates.md",
     "docs/global-distribution.md", "docs/guards.md", "docs/harness.md", "docs/using-fabric.md",
-    "docs/manifests.md", "docs/memory.md", "docs/model-routing.md", "docs/planning-policy.md",
+    "docs/manifests.md", "docs/memory.md", "docs/model-routing.md", "docs/new-product.md", "docs/planning-policy.md",
     "docs/project-profile.md", "docs/project-onboarding.md", "docs/security", "docs/task-artifacts.md",
     "docs/task-specs.md", "docs/validation-matrix.md", "docs/workflow.md", "docs/integrations"
   ],

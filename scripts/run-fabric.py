@@ -9,16 +9,17 @@ state-changing command.
 import sys
 
 
-if sys.argv[1:3] == ["project", "install"]:
+PROJECT_BOOTSTRAP = sys.argv[1:2] == ["project"] and sys.argv[2:3] in (["install"], ["git-cleanup"])
+if PROJECT_BOOTSTRAP:
     if not (sys.flags.isolated and sys.flags.no_site and sys.dont_write_bytecode):
-        raise SystemExit("project install requires python -I -S -B scripts/run-fabric.py")
+        raise SystemExit(f"project {sys.argv[2]} requires python -I -S -B scripts/run-fabric.py")
 
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 # Project-only bootstrap читает .py напрямую: -B запрещает запись, но не чтение чужого .pyc.
-if sys.argv[1:3] == ["project", "install"]:
+if PROJECT_BOOTSTRAP:
     import stat
     from importlib.abc import MetaPathFinder
     from importlib.machinery import PathFinder, SourceFileLoader
@@ -53,4 +54,4 @@ from ai_agent_fabric.__main__ import main
 
 
 if __name__ == "__main__":
-    main()
+    main(project_bootstrap=PROJECT_BOOTSTRAP)

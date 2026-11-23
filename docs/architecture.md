@@ -32,14 +32,18 @@ The Fabric is normally a versioned user-level distribution; a project binds to o
 compatible release and supplies a local overlay. An explicit `project install` instead
 places a runtime-only release, registry and pinned launcher under that target's
 `.agent-fabric/runtime`, with ownership at `.agent-fabric/project-installation.json`.
-Both modes reuse the same binding and current memory schema. Project-only runtime
+Both modes reuse the same binding schema and current memory schema. Project-only runtime
 installation pre-renders dormant Codex persona TOMLs from the canonical profiles and
-readable companions, and retains only the governed project-entry skill. These are
+readable companions and retains the governed project-entry and New Product skills. These are
 covered by the release manifest before any client link is installed. Runtime installation
 does not activate a client, install a Desktop plugin or add an automated Socrates
 handoff. Its launcher pins the project, home and release and rejects
 distribution/bootstrap commands. Missing or damaged local ownership never falls back
-to a global installation. This is distinct from global project
+to a global installation. Git-local exclusions protect generated project-only runtime
+state and optional adapter paths. Editable contracts, tracked settings and user
+changes stay visible according to their existing Git rules. See the
+[project-only Git policy](global-distribution.md#project-only-git-policy).
+This is distinct from global project
 configuration: no project-specific facts, memory, tasks, or credentials enter the
 common distribution. See [global distribution and project binding](global-distribution.md)
 and the [memory boundary](memory.md).
@@ -66,11 +70,12 @@ in a command argument, or recorded in memory. Bash is required for this operatio
 user task
   -> environment detection (read-only)
   -> project profile + relevant memory recall
-  -> Root creates or reopens one separate Socrates chat for the task
-  -> that chat claims the durable task id before lifecycle activation
-  -> Socrates creates a delegation contract
-  -> specialist returns a structured result
-  -> Socrates records result and evidence
+  -> Root prepares separate-chat handoff or recovery
+  -> manual project-only transfer/reopen or supported plugin handoff
+  -> the separate chat claims the task or resumes its saved binding
+  -> Socrates records and dispatches a delegation contract
+  -> specialist submits a structured result to the local outbox
+  -> Socrates acknowledges result and evidence
   -> gate validates the next state transition
 ```
 
@@ -165,10 +170,10 @@ configuration remains solely under `.agent-fabric`.
 
 The separate project-only runtime has `client_activation: none`, even with `--client
 codex`. Client markers do not authorize any client write. A subsequent, separately
-previewed `project codex-install` may create only relative per-persona symlinks under
-`.codex/agents`, the `.agents/skills/agent-fabric-project` entry, and local ownership.
-It refuses existing `.codex` state rather than merging configuration or instructions.
-The adapter never rewrites the release, runtime receipt or task database.
+previewed `project codex-install` creates a relative directory link at
+`.codex/agents`, two relative links under `.agents/skills` for project entry and New
+Product, and local ownership. It requires an absent `.codex` and free skill link
+names. The adapter preserves the release, runtime receipt, binding and task database.
 
 Adapter file installation, Desktop discovery, and real-chat claim/restore are distinct
 states. Only the first is filesystem-testable here; both Desktop states remain

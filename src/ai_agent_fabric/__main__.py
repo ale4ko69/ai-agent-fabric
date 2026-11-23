@@ -20,11 +20,12 @@ from .entrypoints import archive_completed_task, recover_unicode_package, restor
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, release_source_digest, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
 from .socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
 from .project_install import install_project, project_install_preview, restrict_runtime_command
+from .project_git_cleanup import apply_project_git_cleanup, project_git_cleanup_preview
 from .release_journal import project_journal, release_notes
 from .codex_project import codex_project_preview, codex_project_status, install_codex_project
 
 
-def main(*, project_runtime: Path | None = None) -> None:
+def main(*, project_runtime: Path | None = None, project_bootstrap: bool = False) -> None:
     # Локальный launcher задаёт scope до разбора аргументов; обычный global CLI не меняется.
     if project_runtime is not None:
         import os
@@ -351,6 +352,13 @@ def main(*, project_runtime: Path | None = None) -> None:
     project_install_mode.add_argument("--apply", action="store_true")
     project_install.add_argument("--expected-preview-sha256")
     project_install.add_argument("--json", action="store_true")
+    git_cleanup = project_sub.add_parser("git-cleanup", help="Preview or apply local Git exclusions for an existing project installation")
+    git_cleanup.add_argument("target")
+    git_cleanup_mode = git_cleanup.add_mutually_exclusive_group(required=True)
+    git_cleanup_mode.add_argument("--preview", action="store_true")
+    git_cleanup_mode.add_argument("--apply", action="store_true")
+    git_cleanup.add_argument("--expected-preview-sha256")
+    git_cleanup.add_argument("--json", action="store_true")
     project_codex_install = project_sub.add_parser("codex-install", help="Preview or install project-local Codex links; Desktop support remains unverified")
     project_codex_install.add_argument("target")
     project_codex_mode = project_codex_install.add_mutually_exclusive_group(required=True)
@@ -731,6 +739,21 @@ def main(*, project_runtime: Path | None = None) -> None:
                     install_codex_project(args.target, expected_preview_sha256=args.expected_preview_sha256)
                     if args.apply else codex_project_preview(args.target)
                 )
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
+    elif args.command == "project" and args.project_command == "git-cleanup":
+        if not project_bootstrap:
+            parser.error("project git-cleanup requires python -I -S -B scripts/run-fabric.py from trusted source")
+        if args.apply and not args.expected_preview_sha256:
+            parser.error("--apply requires --expected-preview-sha256 from a reviewed cleanup preview")
+        if args.preview and args.expected_preview_sha256 is not None:
+            parser.error("--expected-preview-sha256 is valid only with --apply")
+        try:
+            result = (
+                apply_project_git_cleanup(args.target, expected_preview_sha256=args.expected_preview_sha256)
+                if args.apply else project_git_cleanup_preview(args.target)
+            )
         except (OSError, ValueError) as error:
             parser.error(str(error))
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else result)
