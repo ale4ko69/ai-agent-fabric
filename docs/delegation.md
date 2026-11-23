@@ -36,6 +36,18 @@ references to artifacts, findings, and decisions. A specialist may submit it to 
 local outbox, but only Socrates can acknowledge it into the memory record. Both
 envelopes reject secret-like keys and common credential formats before persistence.
 
+For project journal attribution, declare a concrete project-relative output in
+`required_outputs` and cite it in the result's `artifacts` array with its lowercase
+SHA-256 as `sha256`. Use a separate evidence file when multiple requests will edit
+the same main output. Fabric records the output's initial digest or absence on the
+first dispatch. On acknowledgement it checks that the digest matches the current
+file and differs from the baseline, and that the output is distinct from the
+request's input and scope files. It checks that proof again on task completion.
+If multiple requests claim the same output and bytes, including through aliases
+of the same file, that evidence does not establish which request made the
+contribution. Use distinct outputs to establish each contribution.
+Existing result envelopes with path-only artifacts are still supported.
+
 Use the pinned launcher to run `memory submit-result` for a specialist response.
 Socrates uses `socrates submit-request`, `socrates dispatch-request` and
 `socrates acknowledge-result` with the task session and its claimed thread ID.

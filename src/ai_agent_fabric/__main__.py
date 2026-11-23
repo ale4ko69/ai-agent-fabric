@@ -20,6 +20,7 @@ from .entrypoints import archive_completed_task, recover_unicode_package, restor
 from .distribution import adapter_manifest, bind_project, binding_preview, client_enable_preview, client_rollback_preview, client_uninstall_preview, codex_skill_enable_preview, default_fabric_home, disable_codex_skills, enable_client, enable_codex_skills, enter_secret, install_release, onboard_project, project_context, project_onboarding_preview, project_rollback_preview, project_status, project_update_preview, release_preview, release_source_digest, repair_project_update, repair_project_update_preview, require_bound_project, rollback_client, rollback_project, secret_entry_preview, uninstall_client, update_project
 from .socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
 from .project_install import install_project, project_install_preview, restrict_runtime_command
+from .release_journal import project_journal, release_notes
 from .codex_project import codex_project_preview, codex_project_status, install_codex_project
 
 
@@ -373,6 +374,16 @@ def main(*, project_runtime: Path | None = None) -> None:
     project_command_preview.add_argument("name")
     project_command_preview.add_argument("--home", type=Path, default=default_fabric_home())
     project_command_preview.add_argument("--json", action="store_true")
+    project_journal_parser = project_sub.add_parser("journal", help="Read completed task journal entries")
+    project_journal_parser.add_argument("target", type=Path)
+    project_journal_parser.add_argument("--home", type=Path, default=default_fabric_home())
+    project_journal_parser.add_argument("--json", action="store_true")
+    project_notes = project_sub.add_parser("release-notes", help="Create one local What's New file for explicitly selected tasks")
+    project_notes.add_argument("target", type=Path)
+    project_notes.add_argument("--version", required=True)
+    project_notes.add_argument("--task", action="append", required=True, dest="task_ids")
+    project_notes.add_argument("--home", type=Path, default=default_fabric_home())
+    project_notes.add_argument("--json", action="store_true")
     project_init = project_sub.add_parser("init", help="Bind a fresh or cloned project to the active Fabric release", description="Requires an installed release and a selected client. --preview lists project-local writes; applying creates a binding and project state without replacing existing user-owned instructions.", epilog="Example: ai-agent-fabric project init /path/to/project --client codex --preview. Next: inspect the preview before binding.")
     project_init.add_argument("target", type=Path)
     project_init.add_argument("--client", required=True, choices=("codex", "copilot", "claude"))
@@ -749,6 +760,19 @@ def main(*, project_runtime: Path | None = None) -> None:
         require_bound_project(args.target, args.home)
         command = resolve_project_command(load_project_profile(args.target), args.name)
         print(json.dumps(command, ensure_ascii=False, indent=2) if args.json else command)
+    elif args.command == "project" and args.project_command in {"journal", "release-notes"}:
+        try:
+            require_bound_project(args.target, args.home)
+            if args.project_command == "journal":
+                report = project_journal(args.target)
+            else:
+                report = release_notes(args.target, args.version, args.task_ids)
+        except (OSError, ValueError) as error:
+            parser.exit(1, f"{error}\n")
+        if args.json or args.project_command == "journal":
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            print(report["path"])
     elif args.command == "project" and args.project_command == "status":
         report = project_status(args.target, args.home)
         print(json.dumps(report, ensure_ascii=False, indent=2) if args.json else report)

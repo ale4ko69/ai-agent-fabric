@@ -1,5 +1,6 @@
 from pathlib import Path
-from contextlib import redirect_stderr, redirect_stdout
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing, redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
@@ -8,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from threading import Barrier
 import unittest
 from unittest import mock
 
@@ -15,7 +17,8 @@ from ai_agent_fabric.__main__ import main
 from ai_agent_fabric.distribution import install_release, onboard_project
 from ai_agent_fabric.entrypoints import archive_completed_task, recover_unicode_package, restore_picker, restore_task, start_preview, start_task, work_router
 from ai_agent_fabric.harness import flush_guard_traces, record_checkpoint
-from ai_agent_fabric.memory import acknowledge_result, attest_new_product_mvp_approval, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, record, submit_request, submit_result
+from ai_agent_fabric.memory import MEMORY_SCHEMA_VERSION, acknowledge_result, attest_new_product_mvp_approval, claim_socrates_chat, initialize, mark_request_dispatched, pending_requests, record, submit_request, submit_result
+from ai_agent_fabric.release_journal import project_journal, release_notes
 from ai_agent_fabric.socrates import record_guard_failure, record_harness_signal, resolve_guard, transition_step
 from ai_agent_fabric.task_specs import approval_preview, attest_chat_approval, create_task, implementation_readiness, new_product_mvp_preview, validate_task, workflow_steps
 
@@ -547,7 +550,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertTrue(mark_request_dispatched(self.project, "replacement-plan"))
         connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
         try:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], MEMORY_SCHEMA_VERSION)
             self.assertEqual(connection.execute("SELECT name, sql FROM sqlite_master ORDER BY name").fetchall(), schema)
         finally:
             connection.close()
@@ -1214,6 +1217,13 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(restored["memory"]["steps"][4]["status"], "in-progress")
         self.assertEqual(restored["memory"]["lifecycle"]["continuation"], result["continuation"])
 
+    def _record_example_close_out_facts(self, evidence_root: Path) -> None:
+        (evidence_root.parent / "close-out.json").write_text(json.dumps({
+            "schema_version": 1,
+            "changes": [{"summary": "Updated [example]", "evidence": ["evidence/implementation.md"]}],
+            "checks": [{"name": "Suite", "outcome": "skipped", "reason": "Not requested", "evidence": []}],
+        }), encoding="utf-8")
+
     def test_final_closure_is_actionable_completion(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
         claim_socrates_chat(self.project, "example-task", "socrates-example-task")
@@ -1230,6 +1240,13 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(result["continuation"], {"kind": "resume", "step_id": "rollout"})
         artifact = evidence_root / "rollout.md"
         artifact.write_text("# rollout\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "close-out.json"):
+            transition_step(
+                self.project, "example-task", "rollout", "done",
+                "docs/specs/active/example-task/evidence/rollout.md", "rollout-complete",
+            )
+        self.assertEqual(project_journal(self.project), [])
+        self._record_example_close_out_facts(evidence_root)
         result = transition_step(
             self.project, "example-task", "rollout", "done",
             "docs/specs/active/example-task/evidence/rollout.md", "rollout-complete",
@@ -1241,6 +1258,193 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
             result["continuation"],
             {"kind": "completed", "reason": "workflow-complete", "recommended_action": "archive-task"},
         )
+        self.assertFalse((self.project / ".agent-fabric/release-notes").exists())
+        journal = project_journal(self.project)
+        self.assertEqual(journal[0]["checks"][0]["outcome"], "skipped")
+        self.assertEqual(journal[0]["participants"], [])
+        first = release_notes(self.project, "V1.2.3", ["example-task"])
+        self.assertFalse(first["replayed"])
+        self.assertIn(r"Updated \[example\]", Path(first["path"]).read_text(encoding="utf-8"))
+        self.assertTrue(release_notes(self.project, "v1.2.3", ["example-task"])["replayed"])
+        with self.assertRaisesRegex(ValueError, "Unknown task"):
+            release_notes(self.project, "v1.2.4", ["example-task", "unknown"])
+        self.assertFalse((self.project / ".agent-fabric/release-notes/whats-new-v1.2.4.md").exists())
+
+    def test_journal_only_credits_changed_declared_outputs_with_current_proof(self) -> None:
+        task_id = "example-task"
+        start_task(self.project, "Example task", "small-bug", task_id)
+        claim_socrates_chat(self.project, task_id, "socrates-example-task")
+        package = "docs/specs/active/example-task"
+        evidence_root = self.project / package / "evidence"
+        scope = f"{package}/evidence/scope.md"
+        (self.project / scope).write_text("Example scope", encoding="utf-8")
+        valid = f"{package}/evidence/verified.md"
+        stale = f"{package}/evidence/stale.md"
+        unchanged = f"{package}/evidence/unchanged.md"
+        unrelated = f"{package}/evidence/unrelated.md"
+        shared = f"{package}/evidence/shared.md"
+        alias = f"{package}/evidence/alias.md"
+        for path in (valid, stale, unchanged, unrelated, shared):
+            (self.project / path).write_text("Initial", encoding="utf-8")
+        os.link(self.project / shared, self.project / alias)
+        cases = (
+            ("dev", valid, valid, True, True),
+            ("review", stale, stale, True, True),
+            ("explore", scope, scope, False, True),
+            ("opponent", unchanged, unrelated, False, True),
+            ("plan", unchanged, unchanged, False, True),
+            ("validation", unchanged, unchanged, False, False),
+        )
+        for role, output, citation, modify, bound_digest in cases:
+            request = f"example-{role}"
+            self.assertTrue(submit_request(self.project, {
+                "idempotency_key": request, "session_id": task_id, "agent": role,
+                "task_id": task_id, "scope_artifact": scope,
+                "input_artifacts": [], "required_outputs": [output],
+            }))
+            self.assertTrue(mark_request_dispatched(self.project, request))
+            if modify:
+                (self.project / output).write_text("Specialist contribution", encoding="utf-8")
+            self.assertFalse(mark_request_dispatched(self.project, request))
+            artifact = {"path": citation}
+            if bound_digest:
+                artifact["sha256"] = hashlib.sha256((self.project / citation).read_bytes()).hexdigest()
+            result_key = f"{request}-result"
+            result = {
+                "idempotency_key": result_key, "request_id": request, "session_id": task_id,
+                "agent": role, "summary": "Completed result", "artifacts": [artifact],
+                "findings": [], "decisions": [],
+            }
+            self.assertTrue(submit_result(self.project, result))
+            self.assertTrue(acknowledge_result(self.project, result_key))
+            self.assertFalse(acknowledge_result(self.project, result_key))
+        (self.project / stale).write_text("Later overwrite", encoding="utf-8")
+        for role, output in (("review", shared), ("opponent", shared), ("validation", alias)):
+            request = f"shared-{role}"
+            submit_request(self.project, {
+                "idempotency_key": request, "session_id": task_id, "agent": role,
+                "task_id": task_id, "scope_artifact": scope,
+                "input_artifacts": [], "required_outputs": [output],
+            })
+            mark_request_dispatched(self.project, request)
+        (self.project / shared).write_text("One shared write", encoding="utf-8")
+        for role, output in (("review", shared), ("opponent", shared), ("validation", alias)):
+            request = f"shared-{role}"
+            result_key = f"{request}-result"
+            submit_result(self.project, {
+                "idempotency_key": result_key, "request_id": request, "session_id": task_id,
+                "agent": role, "summary": "Claimed contribution",
+                "artifacts": [{"path": output, "sha256": hashlib.sha256((self.project / output).read_bytes()).hexdigest()}],
+                "findings": [], "decisions": [],
+            })
+            acknowledge_result(self.project, result_key)
+        self._record_example_close_out_facts(evidence_root)
+        for step in workflow_steps("small-bug"):
+            artifact = f"{package}/evidence/{step}.md"
+            (self.project / artifact).write_text(step, encoding="utf-8")
+            transition_step(self.project, task_id, step, "done", artifact, f"{step}-complete")
+
+        participants = project_journal(self.project)[0]["participants"]
+        self.assertEqual([item["name"] for item in participants], ["Heracles"])
+        self.assertEqual(participants[0]["result_id"], "example-dev-result")
+        self.assertEqual(participants[0]["evidence"][0]["path"], "evidence/verified.md")
+
+    def test_close_out_facts_cannot_cite_a_hard_link_to_themselves(self) -> None:
+        task_id = "example-task"
+        start_task(self.project, "Example task", "small-bug", task_id)
+        claim_socrates_chat(self.project, task_id, "socrates-example-task")
+        package = "docs/specs/active/example-task"
+        evidence_root = self.project / package / "evidence"
+        self._record_example_close_out_facts(evidence_root)
+        os.link(self.project / package / "close-out.json", evidence_root / "implementation.md")
+        for step in workflow_steps("small-bug")[:-1]:
+            artifact = f"{package}/evidence/{step}.md"
+            if step != "implementation":
+                (self.project / artifact).write_text(step, encoding="utf-8")
+            transition_step(self.project, task_id, step, "done", artifact, f"{step}-complete")
+        artifact = f"{package}/evidence/rollout.md"
+        (self.project / artifact).write_text("rollout", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "another existing package file"):
+            transition_step(self.project, task_id, "rollout", "done", artifact, "rollout-complete")
+        self.assertEqual(project_journal(self.project), [])
+
+    def test_selected_release_concurrency_cleanup_and_legacy_diagnostic(self) -> None:
+        for task_id in ("first-task", "second-task", "legacy-task"):
+            start_task(self.project, "Example task", "small-bug", task_id)
+            claim_socrates_chat(self.project, task_id, f"socrates-{task_id}")
+            package = f"docs/specs/active/{task_id}"
+            self._record_example_close_out_facts(self.project / package / "evidence")
+            for step in workflow_steps("small-bug"):
+                artifact = f"{package}/evidence/{step}.md"
+                (self.project / artifact).write_text(step, encoding="utf-8")
+                transition_step(self.project, task_id, step, "done", artifact, f"{step}-complete")
+            archive_completed_task(self.project, task_id, "Completed example")
+        # Represent the migrated state of a completed task predating snapshots.
+        with closing(sqlite3.connect(self.project / ".agent-fabric/memory.db")) as connection:
+            with connection:
+                connection.execute("DELETE FROM project_journal WHERE session_id='legacy-task'")
+        with self.assertRaisesRegex(ValueError, "no release-journal evidence"):
+            release_notes(self.project, "v1", ["first-task", "legacy-task"])
+        directory = self.project / ".agent-fabric/release-notes"
+        self.assertFalse(directory.exists())
+
+        with mock.patch("ai_agent_fabric.release_journal.os.link", side_effect=OSError("link denied")):
+            with self.assertRaisesRegex(OSError, "link denied"):
+                release_notes(self.project, "v1", ["first-task"])
+        self.assertEqual(list(directory.iterdir()), [])
+
+        link = os.link
+        barrier = Barrier(2)
+
+        def competing_link(source: Path, destination: Path) -> None:
+            barrier.wait(timeout=10)
+            link(source, destination)
+
+        def publish(task: str) -> dict | None:
+            try:
+                return release_notes(self.project, "v1", [task])
+            except ValueError as error:
+                self.assertIn("different content", str(error))
+                return None
+
+        with mock.patch("ai_agent_fabric.release_journal.os.link", side_effect=competing_link):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(publish, ("first-task", "second-task")))
+        winners = [result for result in results if result is not None]
+        self.assertEqual(len(winners), 1)
+        winner = winners[0]["task_ids"][0]
+        loser = "second-task" if winner == "first-task" else "first-task"
+        notes = directory / "whats-new-v1.md"
+        self.assertEqual(list(directory.iterdir()), [notes])
+        content = notes.read_text(encoding="utf-8")
+        self.assertIn(winner, content)
+        self.assertNotIn(loser, content)
+        self.assertNotIn("legacy-task", content)
+        self.assertTrue(release_notes(self.project, "v1", [winner])["replayed"])
+
+    def test_journal_capture_and_guard_resolution_commit_together(self) -> None:
+        task_id = "example-task"
+        start_task(self.project, "Example task", "small-bug", task_id)
+        claim_socrates_chat(self.project, task_id, "socrates-example-task")
+        package = "docs/specs/active/example-task"
+        guard_artifact = f"{package}/evidence/guard.md"
+        (self.project / guard_artifact).write_text("Guard evidence", encoding="utf-8")
+        guard = record_guard_failure(
+            self.project, task_id, "blocked-check", "incident", "checkpoint", guard_artifact, self.home,
+        )
+        self.assertEqual(guard["status"], "blocked")
+        for step in workflow_steps("small-bug"):
+            artifact = f"{package}/evidence/{step}.md"
+            (self.project / artifact).write_text(step, encoding="utf-8")
+            transition_step(self.project, task_id, step, "done", artifact, f"{step}-complete")
+        with self.assertRaisesRegex(ValueError, "close-out.json"):
+            resolve_guard(self.project, task_id, "blocked-check", guard_artifact, "Owner approved recovery")
+        self.assertEqual(restore_task(self.project, task_id)["memory"]["guard_resolutions"], [])
+        self.assertEqual(project_journal(self.project), [])
+        self._record_example_close_out_facts(self.project / package / "evidence")
+        resolved = resolve_guard(self.project, task_id, "blocked-check", guard_artifact, "Owner approved recovery")
+        self.assertEqual(resolved["status"], "completed")
+        self.assertEqual(project_journal(self.project)[0]["task_id"], task_id)
 
     def test_owner_direction_resolves_an_escalated_guard_without_rewriting_history(self) -> None:
         start_task(self.project, "Example task", "small-bug", "example-task")
@@ -1278,6 +1482,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         start_task(self.project, "Example task", "small-bug", "example-task")
         claim_socrates_chat(self.project, "example-task", "socrates-example-task")
         evidence_root = self.project / "docs/specs/active/example-task/evidence"
+        self._record_example_close_out_facts(evidence_root)
         for step in ("intake", "evidence", "implementation", "review", "validation", "close-out", "rollout"):
             artifact = evidence_root / f"{step}.md"
             artifact.write_text(f"# {step}\n", encoding="utf-8")
@@ -1291,6 +1496,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(archived["status"], "archived")
         self.assertFalse((self.project / "docs/specs/active/example-task").exists())
         self.assertTrue((self.project / "docs/specs/archived/example-task").is_dir())
+        self.assertEqual(project_journal(self.project)[0]["task_id"], "example-task")
         self.assertEqual(work_router(self.project)["route"], "start")
         restored = initialize(self.project)
         self.assertEqual(restored, self.project / ".agent-fabric/memory.db")
@@ -1351,7 +1557,7 @@ class TaskLifecycleAndGuardsTest(unittest.TestCase):
         self.assertEqual(restored["memory"]["steps"][-1]["status"], "pending")
         connection = sqlite3.connect(self.project / ".agent-fabric/memory.db")
         try:
-            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], MEMORY_SCHEMA_VERSION)
             self.assertIsNotNone(connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='guard_resolutions'").fetchone())
         finally:
             connection.close()
