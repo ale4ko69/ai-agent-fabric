@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-agent-fabric"
 version = "0.1.31"
-description = "Portable project-local agent infrastructure with durable memory"
+description = "Coordinate AI agent teams from planning through release, with persistent task state and review. Supports user-wide and per-project installation."
 requires-python = ">=3.10"
 
 [project.scripts]
